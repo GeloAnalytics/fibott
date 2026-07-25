@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# ML training images (large/personal photos of kiosk deposits) — the
+# trained models/bottle-can-head/weights.json output is small and fine to commit.
+/ml-data
+
+.vercel
+.env*

@@ -1,0 +1,24 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { createPasswordResetToken } from "@/lib/tokens";
+import { sendPasswordResetEmail } from "@/lib/email";
+
+const schema = z.object({ email: z.string().email() });
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => null);
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  if (user) {
+    const token = await createPasswordResetToken(user.id);
+    await sendPasswordResetEmail(parsed.data.email, token);
+  }
+
+  // Always return a generic response to avoid leaking whether the email is registered.
+  return NextResponse.json({ ok: true });
+}

@@ -1,0 +1,320 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MaterialType {
+  PET_BOTTLE
+  ALUMINUM_CAN
+  REJECTED
+}
+
+enum DepositStatus {
+  ACCEPTED
+  REJECTED
+}
+
+enum DepositSessionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum TransactionType {
+  EARN
+  SPEND
+  ADJUSTMENT
+}
+
+enum TransactionSource {
+  DEPOSIT
+  VOUCHER_REDEMPTION
+  ADMIN_ADJUSTMENT
+}
+
+enum VoucherStatus {
+  PENDING
+  ISSUED
+  REDEEMED
+  EXPIRED
+  FAILED
+}
+
+enum DeviceType {
+  ESP32_CAM
+  KIOSK_CONTROLLER
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum NotificationType {
+  DEPOSIT_ACCEPTED
+  DEPOSIT_REJECTED
+  VOUCHER_ISSUED
+  SYSTEM
+  ADMIN_BROADCAST
+}
+
+model User {
+  id                  String                @id @default(cuid())
+  name                String?
+  email               String?               @unique
+  emailVerified       DateTime?
+  image               String?
+  passwordHash        String?
+  role                Role                  @default(USER)
+  status              AccountStatus         @default(ACTIVE)
+  pointsBalance       Int                   @default(0)
+
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  pointsTransactions  PointsTransaction[]
+  deposits            Deposit[]
+  depositSessions     DepositSession[]
+  vouchers            Voucher[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]            @relation("AuditLogActor")
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  expires   DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Device {
+  id           String       @id @default(cuid())
+  name         String
+  type         DeviceType
+  apiKeyHash   String       @unique
+  apiKeyPrefix String
+  location     String?
+  status       DeviceStatus @default(ACTIVE)
+  lastSeenAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  deposits        Deposit[]
+  depositSessions DepositSession[]
+
+  @@index([type])
+  @@index([status])
+}
+
+model DepositSession {
+  id          String               @id @default(cuid())
+  code        String               @unique
+  userId      String
+  deviceId    String?
+  status      DepositSessionStatus @default(PENDING)
+  expiresAt   DateTime
+  activatedAt DateTime?
+  completedAt DateTime?
+  createdAt   DateTime             @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device   Device?   @relation(fields: [deviceId], references: [id])
+  deposits Deposit[]
+
+  @@index([userId])
+  @@index([code])
+  @@index([status])
+}
+
+model RewardRule {
+  id            String       @id @default(cuid())
+  materialType  MaterialType @unique
+  pointsPerItem Int
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model VoucherRule {
+  id              String   @id @default(cuid())
+  label           String
+  pointsCost      Int
+  durationMinutes Int
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vouchers Voucher[]
+}
+
+model Deposit {
+  id                       String        @id @default(cuid())
+  userId                   String?
+  depositSessionId         String?
+  deviceId                 String
+  materialType             MaterialType
+  quantity                 Int           @default(1)
+  pointsAwarded            Int           @default(0)
+  status                   DepositStatus
+  classificationLabel      String
+  classificationConfidence Float
+  imageUrl                 String?
+  createdAt                DateTime      @default(now())
+
+  user              User?               @relation(fields: [userId], references: [id])
+  depositSession    DepositSession?     @relation(fields: [depositSessionId], references: [id])
+  device            Device              @relation(fields: [deviceId], references: [id])
+  pointsTransaction PointsTransaction?
+
+  @@index([userId])
+  @@index([depositSessionId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PointsTransaction {
+  id           String            @id @default(cuid())
+  userId       String
+  type         TransactionType
+  amount       Int
+  balanceAfter Int
+  source       TransactionSource
+  depositId    String?           @unique
+  voucherId    String?
+  note         String?
+  createdAt    DateTime          @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deposit Deposit? @relation(fields: [depositId], references: [id])
+  voucher Voucher? @relation(fields: [voucherId], references: [id])
+
+  @@index([userId])
+  @@index([source])
+  @@index([createdAt])
+}
+
+model Voucher {
+  id                 String        @id @default(cuid())
+  userId             String
+  voucherRuleId      String
+  code               String        @unique
+  pointsCost         Int
+  durationMinutes    Int
+  status             VoucherStatus @default(PENDING)
+  mikrotikProfile    String?
+  mikrotikVoucherRef String?
+  issuedAt           DateTime?
+  redeemedAt         DateTime?
+  expiresAt          DateTime?
+  failureReason      String?
+  createdAt          DateTime      @default(now())
+
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voucherRule        VoucherRule          @relation(fields: [voucherRuleId], references: [id])
+  pointsTransactions PointsTransaction[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AuditLogActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String?
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
