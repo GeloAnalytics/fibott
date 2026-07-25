@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
-import { createVerificationToken } from "@/lib/tokens";
-import { sendVerificationEmail } from "@/lib/email";
 
 const registerSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -33,11 +31,8 @@ export async function POST(req: Request) {
 
   const passwordHash = await hashPassword(password);
   await prisma.user.create({
-    data: { name, email, passwordHash },
+    data: { name, email, passwordHash, emailVerified: new Date() },
   });
-
-  const token = await createVerificationToken(email);
-  await sendVerificationEmail(email, token);
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }

@@ -1,9 +1,18 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { neonConfig } from "@neondatabase/serverless";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import ws from "ws";
 import { PrismaClient } from "../src/generated/prisma/client";
 
-const prisma = new PrismaClient();
+// Plain Node.js (this CLI script, unlike Vercel's own runtime) has no global
+// WebSocket implementation, which @neondatabase/serverless needs even for
+// non-transaction queries.
+neonConfig.webSocketConstructor = ws;
+
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 const KEY_PREFIX = "fibott_dev_";
 
@@ -56,6 +65,22 @@ async function main() {
     },
   });
 
+  const testUserEmail = "testuser@fibott.local";
+  const testUserPassword = "TestUser12345!";
+  const testUserPasswordHash = await bcrypt.hash(testUserPassword, 10);
+  await prisma.user.upsert({
+    where: { email: testUserEmail },
+    update: {},
+    create: {
+      email: testUserEmail,
+      name: "Test User",
+      passwordHash: testUserPasswordHash,
+      role: "USER",
+      emailVerified: new Date(),
+      pointsBalance: 500,
+    },
+  });
+
   const devices: { name: string; type: "ESP32_CAM" | "KIOSK_CONTROLLER" }[] = [
     { name: "Fibott-Kiosk-01-Cam", type: "ESP32_CAM" },
     { name: "Fibott-Kiosk-01-Controller", type: "KIOSK_CONTROLLER" },
@@ -81,6 +106,7 @@ async function main() {
 
   console.log("Seed complete.");
   console.log(`Admin login: ${adminEmail} / ${adminPassword}`);
+  console.log(`Test user login: ${testUserEmail} / ${testUserPassword}`);
   if (generatedKeys.length > 0) {
     console.log("\nDevice API keys (shown once, save these for testing):");
     for (const key of generatedKeys) {

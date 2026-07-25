@@ -16,7 +16,6 @@ type FormValues = { name: string; email: string; password: string };
 export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
 
   const {
     register,
@@ -32,32 +31,18 @@ export default function RegisterPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
     });
-    setSubmitting(false);
     if (!res.ok) {
+      setSubmitting(false);
       const data = await res.json().catch(() => ({}));
       setServerError(data.error ?? "Something went wrong. Please try again.");
       return;
     }
-    setSubmitted(true);
-  }
-
-  if (submitted) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Check your email</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            We&apos;ve sent a verification link to your email address. Click it to
-            activate your account, then sign in.
-          </p>
-          <Button render={<Link href="/login" />} className="w-full">
-            Back to sign in
-          </Button>
-        </CardContent>
-      </Card>
-    );
+    await signIn("credentials", {
+      email: values.email,
+      password: values.password,
+      callbackUrl: "/",
+    });
+    setSubmitting(false);
   }
 
   return (

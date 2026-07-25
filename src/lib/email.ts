@@ -18,7 +18,10 @@ async function send(to: string, subject: string, html: string) {
     console.log(`[email] RESEND_API_KEY not set. Would send "${subject}" to ${to}:\n${html}`);
     return;
   }
-  await resend.emails.send({ from, to, subject, html });
+  const { error } = await resend.emails.send({ from, to, subject, html });
+  if (error) {
+    console.error(`[email] Resend failed to send "${subject}" to ${to}:`, error);
+  }
 }
 
 export async function sendVerificationEmail(email: string, token: string) {
