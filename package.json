@@ -8,7 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "ml:train": "tsx scripts/ml/train.ts"
+    "ml:import:taco": "tsx scripts/ml/import-taco-dataset.ts",
+    "ml:import": "tsx scripts/ml/import-dataset.ts",
+    "ml:train": "tsx scripts/ml/train.ts",
+    "ml:setup": "tsx scripts/ml/setup.ts",
+    "ml:collect": "tsx scripts/ml/collect-server.ts",
+    "bridge:start": "tsx infra/bridge/server.ts",
+    "test:mikrotik": "tsx infra/test-mikrotik.ts",
+    "db:seed": "prisma db seed"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

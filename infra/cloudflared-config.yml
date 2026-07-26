@@ -1,0 +1,13 @@
+# Cloudflare Tunnel config for Fibott bridge service
+# Copy this file to: C:\Users\<YOU>\.cloudflared\config.yml
+# Replace <TUNNEL-ID> and <YOU> with real values.
+# Run:  cloudflared tunnel create fibott-mikrotik  to get the tunnel UUID.
+
+tunnel: <TUNNEL-ID>
+credentials-file: C:\Users\<YOU>\.cloudflared\<TUNNEL-ID>.json
+
+ingress:
+  # Forward tunnel traffic to the Fibott bridge service (npm run bridge:start).
+  # The bridge validates the BRIDGE_SECRET bearer token, then calls MikroTik.
+  # Do NOT point this directly at 192.168.88.1 — that bypasses bridge auth.
+  - service: http://localhost:3001

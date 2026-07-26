@@ -5,6 +5,13 @@ import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 
 const schema = z.object({ code: z.string().length(6) });
 
+/**
+ * Legacy compatibility route for the controller-era prototype.
+ *
+ * The mobile-first baseline should not rely on this endpoint. Keep it
+ * only if you still need to activate sessions from the older workflow
+ * during migration.
+ */
 export async function POST(req: Request) {
   let device;
   try {

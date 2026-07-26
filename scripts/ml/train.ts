@@ -1,23 +1,15 @@
 /**
- * Fine-tunes a small classifier head on top of frozen MobileNet embeddings,
- * using your own labeled kiosk images — the fix for classifier.ts's
- * zero-shot ImageNet fallback not having a real "beverage can" class.
+ * Fine-tunes a small classifier head on top of frozen MobileNet embeddings.
  *
- * Usage:
- *   1. Collect photos from the actual ESP32-CAM (same lighting/background/
- *      distance you'll see in production — that match matters far more
- *      than volume).
- *   2. Sort them into:
- *        ml-data/PET_BOTTLE/*.jpg
- *        ml-data/ALUMINUM_CAN/*.jpg
- *        ml-data/REJECTED/*.jpg      (empty chute, hands, random trash —
- *                                      anything that should NOT accept)
- *      Aim for at least ~40-50 images per class to start; more is better,
- *      and REJECTED should cover a wide variety of "not a bottle/can" cases.
- *   3. npx tsx scripts/ml/train.ts
- *   4. Output goes to models/bottle-can-head/weights.json — classifier.ts
- *      picks it up automatically next time the server starts (or set
- *      FIBOTT_ML_HEAD_PATH to point elsewhere).
+ * The active dataset plan uses internet-sourced images rather than live
+ * ESP32-CAM captures. Keep the labels and the train/validation split clean:
+ *
+ *   ml-data/PET_BOTTLE/*.jpg
+ *   ml-data/ALUMINUM_CAN/*.jpg
+ *   ml-data/REJECTED/*.jpg
+ *
+ * Output goes to models/bottle-can-head/weights.json and is picked up by
+ * classifier.ts automatically on the next server start.
  */
 import "dotenv/config";
 import fs from "fs";
@@ -27,21 +19,27 @@ import { embedImage } from "../../src/lib/classifier";
 
 const DATA_DIR = path.join(process.cwd(), "ml-data");
 const OUTPUT_PATH = path.join(process.cwd(), "models", "bottle-can-head", "weights.json");
-const LABELS = ["PET_BOTTLE", "ALUMINUM_CAN", "REJECTED"] as const;
+const ALL_LABELS = ["PET_BOTTLE", "ALUMINUM_CAN", "REJECTED"] as const;
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png"]);
-const EPOCHS = 30;
+const EPOCHS = 60;
+const PATIENCE = 10;
 
-async function loadDataset(): Promise<{ embeddings: Float32Array[]; labelIndices: number[] }> {
+function getActiveLabels(): string[] {
+  return ALL_LABELS.filter((label) => {
+    const dir = path.join(DATA_DIR, label);
+    if (!fs.existsSync(dir)) return false;
+    const count = fs.readdirSync(dir).filter((f) => IMAGE_EXTENSIONS.has(path.extname(f).toLowerCase())).length;
+    if (count === 0) return false;
+    return true;
+  });
+}
+
+async function loadDataset(labels: string[]): Promise<{ embeddings: Float32Array[]; labelIndices: number[] }> {
   const embeddings: Float32Array[] = [];
   const labelIndices: number[] = [];
 
-  for (const [labelIndex, label] of LABELS.entries()) {
+  for (const [labelIndex, label] of labels.entries()) {
     const dir = path.join(DATA_DIR, label);
-    if (!fs.existsSync(dir)) {
-      console.warn(`Missing ${dir} — skipping (0 images for ${label})`);
-      continue;
-    }
-
     const files = fs
       .readdirSync(dir)
       .filter((f) => IMAGE_EXTENSIONS.has(path.extname(f).toLowerCase()));
@@ -58,9 +56,18 @@ async function loadDataset(): Promise<{ embeddings: Float32Array[]; labelIndices
 }
 
 async function main() {
-  const { embeddings, labelIndices } = await loadDataset();
+  const labels = getActiveLabels();
+  if (labels.length < 2) {
+    throw new Error(
+      `Need at least 2 label directories with images under ${DATA_DIR}. ` +
+        `Found: [${labels.join(", ")}]. Populate ml-data/ and retry.`
+    );
+  }
+  console.log(`Training on ${labels.length} classes: ${labels.join(", ")}`);
 
-  if (embeddings.length < LABELS.length * 10) {
+  const { embeddings, labelIndices } = await loadDataset(labels);
+
+  if (embeddings.length < labels.length * 10) {
     throw new Error(
       `Only ${embeddings.length} labeled images found under ${DATA_DIR}. ` +
         `Collect at least ~10 per class (ideally 40-50+) before training — see the ` +
@@ -73,38 +80,83 @@ async function main() {
 
   const inputDim = embeddings[0].length;
   const xs = tf.tensor2d(embeddings.map((e) => Array.from(e)));
-  const ys = tf.oneHot(tf.tensor1d(labelIndices, "int32"), LABELS.length);
+  const ys = tf.oneHot(tf.tensor1d(labelIndices, "int32"), labels.length);
 
+  // Compute class weights to handle imbalanced datasets (e.g. more bottles than cans).
+  const classCounts = new Array(labels.length).fill(0) as number[];
+  for (const idx of labelIndices) classCounts[idx]++;
+  const maxCount = Math.max(...classCounts);
+  const classWeight: Record<number, number> = {};
+  for (let i = 0; i < labels.length; i++) {
+    classWeight[i] = classCounts[i] > 0 ? maxCount / classCounts[i] : 1;
+  }
+  console.log("Class weights:", Object.fromEntries(labels.map((l, i) => [l, classWeight[i].toFixed(2)])));
+
+  // Two-layer head: MobileNet features → 128 ReLU → softmax.
+  // A single linear layer is logistic regression over the embeddings and
+  // underfits when the bottle/can boundary is non-linear in feature space.
   const head = tf.sequential({
     layers: [
-      tf.layers.dense({ inputShape: [inputDim], units: LABELS.length, activation: "softmax" }),
+      tf.layers.dense({ inputShape: [inputDim], units: 128, activation: "relu",
+        kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 }) }),
+      tf.layers.dropout({ rate: 0.4 }),
+      tf.layers.dense({ units: labels.length, activation: "softmax" }),
     ],
   });
   head.compile({ optimizer: tf.train.adam(0.001), loss: "categoricalCrossentropy", metrics: ["accuracy"] });
+
+  let bestValAcc = 0;
+  let epochsSinceImprovement = 0;
+  // Typed as unknown[] so TF generic variance doesn't confuse the narrowing.
+  let bestWeights: { dispose(): void }[] | null = null;
 
   await head.fit(xs, ys, {
     epochs: EPOCHS,
     validationSplit: 0.2,
     shuffle: true,
+    classWeight,
     callbacks: {
       onEpochEnd: (epoch, logs) => {
+        const valAcc = logs?.val_acc ?? 0;
+        const marker = valAcc > bestValAcc ? " ✓" : "";
         console.log(
-          `epoch ${epoch + 1}/${EPOCHS} — loss ${logs?.loss?.toFixed(4)} acc ${logs?.acc?.toFixed(4)} ` +
-            `val_acc ${logs?.val_acc?.toFixed(4)}`
+          `epoch ${String(epoch + 1).padStart(2)}/${EPOCHS} — ` +
+          `loss ${logs?.loss?.toFixed(4)} acc ${logs?.acc?.toFixed(4)} ` +
+          `val_loss ${logs?.val_loss?.toFixed(4)} val_acc ${valAcc.toFixed(4)}${marker}`
         );
+        if (valAcc > bestValAcc) {
+          bestValAcc = valAcc;
+          epochsSinceImprovement = 0;
+          bestWeights = head.getWeights().map((w) => w.clone()) as { dispose(): void }[];
+        } else {
+          epochsSinceImprovement++;
+          if (epochsSinceImprovement >= PATIENCE) {
+            console.log(`\nEarly stopping at epoch ${epoch + 1} (no val_acc improvement for ${PATIENCE} epochs)`);
+            head.stopTraining = true;
+          }
+        }
       },
     },
   });
 
-  const [kernel, bias] = head.getWeights();
+  // Restore the best weights before saving.
+  // Don't dispose here — weightTensors.forEach(dispose) below handles cleanup
+  // after serialization (setWeights keeps a reference to the same tensors).
+  if (bestWeights !== null) {
+    head.setWeights(bestWeights as unknown as tf.Tensor[]);
+  }
+  console.log(`\nBest val_acc: ${bestValAcc.toFixed(4)}`);
+
+  const weightTensors = head.getWeights();
   const serialized = {
     inputDim,
-    labels: LABELS,
-    weights: [
-      { shape: kernel.shape, data: Array.from(await kernel.data()) },
-      { shape: bias.shape, data: Array.from(await bias.data()) },
-    ],
+    hiddenUnits: 128,
+    labels,
+    weights: await Promise.all(
+      weightTensors.map(async (w) => ({ shape: w.shape, data: Array.from(await w.data()) }))
+    ),
   };
+  weightTensors.forEach((w) => w.dispose());
 
   fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(serialized));

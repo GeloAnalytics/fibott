@@ -48,3 +48,12 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# AI tool scratch dirs
+.agents/
+.claude/
+.gemini/
+.hallmark/
+.impeccable/
+graphify-out/
+skills-lock.json

@@ -49,10 +49,10 @@ export interface ClassificationResult {
 const FINE_TUNED_HEAD_PATH =
   process.env.FIBOTT_ML_HEAD_PATH ?? path.join(process.cwd(), "models", "bottle-can-head", "weights.json");
 
-const HEAD_LABELS: MaterialType[] = ["PET_BOTTLE", "ALUMINUM_CAN", "REJECTED"];
-
 interface SerializedHead {
   inputDim: number;
+  /** Present in two-layer heads trained after the hidden-layer upgrade. Absent = legacy single-layer. */
+  hiddenUnits?: number;
   labels: string[];
   weights: { shape: number[]; data: number[] }[];
 }
@@ -135,9 +135,9 @@ export async function embedImage(imageBuffer: Buffer): Promise<Float32Array> {
   }
 }
 
-let fineTunedHeadPromise: Promise<tf.LayersModel | null> | null = null;
+let fineTunedHeadPromise: Promise<{ model: tf.LayersModel; labels: string[] } | null> | null = null;
 
-function loadFineTunedHead(): Promise<tf.LayersModel | null> {
+function loadFineTunedHead(): Promise<{ model: tf.LayersModel; labels: string[] } | null> {
   if (!fineTunedHeadPromise) {
     fineTunedHeadPromise = (async () => {
       if (!fs.existsSync(FINE_TUNED_HEAD_PATH)) return null;
@@ -145,17 +145,18 @@ function loadFineTunedHead(): Promise<tf.LayersModel | null> {
       const raw: SerializedHead = JSON.parse(fs.readFileSync(FINE_TUNED_HEAD_PATH, "utf-8"));
       await ensureBackend();
 
-      const head = tf.sequential({
-        layers: [
-          tf.layers.dense({
-            inputShape: [raw.inputDim],
-            units: raw.labels.length,
-            activation: "softmax",
-          }),
-        ],
-      });
+      const layers: tf.layers.Layer[] = raw.hiddenUnits
+        ? [
+            tf.layers.dense({ inputShape: [raw.inputDim], units: raw.hiddenUnits, activation: "relu" }),
+            tf.layers.dropout({ rate: 0 }), // no dropout at inference
+            tf.layers.dense({ units: raw.labels.length, activation: "softmax" }),
+          ]
+        : [
+            tf.layers.dense({ inputShape: [raw.inputDim], units: raw.labels.length, activation: "softmax" }),
+          ];
+      const head = tf.sequential({ layers });
       head.setWeights(raw.weights.map((w) => tf.tensor(w.data, w.shape)));
-      return head;
+      return { model: head, labels: raw.labels };
     })();
   }
   return fineTunedHeadPromise;
@@ -163,6 +164,7 @@ function loadFineTunedHead(): Promise<tf.LayersModel | null> {
 
 async function classifyWithFineTunedHead(
   head: tf.LayersModel,
+  headLabels: string[],
   imageBuffer: Buffer
 ): Promise<ClassificationResult> {
   const model = await loadModel();
@@ -177,10 +179,15 @@ async function classifyWithFineTunedHead(
         for (let i = 1; i < values.length; i++) {
           if (values[i] > values[bestIdx]) bestIdx = i;
         }
+        const confidence = values[bestIdx];
+        if (confidence < MIN_CONFIDENCE) {
+          return { materialType: "REJECTED", label: `fine-tuned:low-confidence`, confidence };
+        }
+        const label = headLabels[bestIdx] as MaterialType;
         return {
-          materialType: HEAD_LABELS[bestIdx],
-          label: `fine-tuned:${HEAD_LABELS[bestIdx]}`,
-          confidence: values[bestIdx],
+          materialType: label === "REJECTED" ? "REJECTED" : label,
+          label: `fine-tuned:${label}`,
+          confidence,
         };
       } finally {
         scores.dispose();
@@ -194,9 +201,9 @@ async function classifyWithFineTunedHead(
 }
 
 export async function classifyImage(imageBuffer: Buffer): Promise<ClassificationResult> {
-  const head = await loadFineTunedHead();
-  if (head) {
-    return classifyWithFineTunedHead(head, imageBuffer);
+  const loaded = await loadFineTunedHead();
+  if (loaded) {
+    return classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
   }
 
   const model = await loadModel();
