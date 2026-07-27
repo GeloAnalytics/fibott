@@ -74,8 +74,10 @@ export function RecyclingSession() {
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/kiosk/session?id=${sessionId}`);
+        const text = await res.text();
+        console.log(`[poll] ${res.status} ${res.url}`, text);
         if (!res.ok) return;
-        const data = await res.json();
+        const data = JSON.parse(text);
 
         if (data.status === "COMPLETED") {
           stopPolling();
@@ -85,8 +87,8 @@ export function RecyclingSession() {
           stopPolling();
           setPhase({ name: "expired" });
         }
-      } catch {
-        // network hiccup — keep polling
+      } catch (e) {
+        console.log("[poll] error", e);
       }
     }, 2000);
 
