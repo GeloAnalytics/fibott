@@ -49,15 +49,21 @@ export async function spendPoints(
     note?: string;
   }
 ): Promise<number> {
-  const current = await tx.user.findUniqueOrThrow({ where: { id: params.userId } });
-  if (current.pointsBalance < params.amount) {
+  // A separate read-then-check-then-write here would race under concurrent
+  // requests (e.g. a double-submitted redemption): both could read a
+  // sufficient balance before either commits, and since pointsBalance has
+  // no non-negative constraint at the DB level, both would succeed and push
+  // the balance negative. Folding the balance check into the UPDATE's WHERE
+  // clause makes the check-and-decrement a single atomic operation.
+  const result = await tx.user.updateMany({
+    where: { id: params.userId, pointsBalance: { gte: params.amount } },
+    data: { pointsBalance: { decrement: params.amount } },
+  });
+  if (result.count === 0) {
     throw new InsufficientPointsError();
   }
 
-  const user = await tx.user.update({
-    where: { id: params.userId },
-    data: { pointsBalance: { decrement: params.amount } },
-  });
+  const user = await tx.user.findUniqueOrThrow({ where: { id: params.userId } });
 
   await tx.pointsTransaction.create({
     data: {
