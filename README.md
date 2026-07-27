@@ -8,7 +8,7 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 - `prisma/` - Prisma schema, migrations, seed scripts
 - `firmware/` - ESP32-CAM firmware plus a legacy controller-era sketch kept for migration support
 - `hardware/` - wiring notes, BOM, and provisioning guidance for the mobile-first baseline
-- `docs/` - system design, connectivity, status, and ML training docs
+- `docs/` - system design, connectivity, status, ML classifier notes, and the operator's guide
 - `scripts/ml/` - training and dataset preparation pipeline for the classifier
 
 ## Key architecture
@@ -22,12 +22,13 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 
 ## Current status (~90–95% complete)
 
-- Full application stack working: auth, deposits, wallet, leaderboard, admin portal, voucher redemption
+- Full application stack working: auth, deposits, wallet, admin portal, voucher redemption. Leaderboard and Reports are still placeholder "coming soon" pages, not implemented
 - ESP32-CAM session-polling workflow and firmware complete
 - MikroTik RouterOS REST integration verified (`npm run test:mikrotik` → `✓ Created hotspot user`)
 - Hotspot and Walled Garden configured — `fibott.vercel.app` and `accounts.google.com` accessible before WiFi auth
-- Bridge architecture in place: direct MikroTik for local dev, bridge + Cloudflare Tunnel for production
-- ML training pipeline complete; accuracy is low (~10%) due to outdoor TACO dataset — retrain with real kiosk captures
+- Bridge architecture in place: direct MikroTik for local dev, bridge + zrok Tunnel for production
+- ML training pipeline complete; accuracy is low (~10%) due to outdoor TACO dataset — retrain with real kiosk captures (see `docs/ml.md`)
+- QA pass completed 2026-07-27: fixed a recycling-session frontend/backend desync, stale voucher status display, a points-spent double-count, and a points-balance race condition — see `docs/CLIENT-GUIDE.md` §6 for the list
 - See `docs/STATUS.md` for the remaining action plan (permanent tunnel, Vercel env vars, end-to-end test)
 
 ## Getting started
@@ -66,7 +67,7 @@ Optional — local development (direct MikroTik):
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `RESEND_API_KEY`
-- `RESEND_FROM`
+- `EMAIL_FROM` — defaults to Resend's sandbox address, which only delivers to the Resend account owner. Verify a custom sending domain in Resend before relying on password-reset emails for real users
 - `MIKROTIK_HOST` (default: `192.168.88.1`)
 - `MIKROTIK_USER` (default: `admin`)
 - `MIKROTIK_PASSWORD`
@@ -76,9 +77,9 @@ Optional — local development (direct MikroTik):
 - `MIKROTIK_INSECURE_TLS`
 - `FIBOTT_ML_HEAD_PATH`
 
-Optional — production (bridge via Cloudflare Tunnel):
+Optional — production (bridge via zrok Tunnel):
 
-- `BRIDGE_URL` — set to the tunnel URL (e.g. `https://<uuid>.cfargotunnel.com`). When set, all MikroTik calls go through the bridge service instead of hitting the router directly.
+- `BRIDGE_URL` — set to the permanent zrok share URL (e.g. `https://<token>.share.zrok.io`, from `infra/zrok-tunnel.ps1`). When set, all MikroTik calls go through the bridge service instead of hitting the router directly. Required once the app is deployed anywhere other than the router's own LAN — voucher redemption fails without it.
 - `BRIDGE_SECRET` — shared bearer secret between Vercel and the bridge service.
 
 Leave `BRIDGE_URL` empty (or unset) for local development.
@@ -108,6 +109,8 @@ Open `http://localhost:3000`.
 
 - `docs/SYSTEM.md` - full system architecture (local vs production), bridge service, API endpoints, hardware, firmware, ML classifier, and environment variables
 - `docs/STATUS.md` - current completion state and ordered action plan for remaining tasks
+- `docs/ml.md` - why the classifier works the way it does, and the path to a properly trained model
+- `docs/CLIENT-GUIDE.md` - plain-language operator's guide: pre-launch checklist, daily operation, known limitations, troubleshooting
 
 ## Useful commands
 
@@ -117,7 +120,9 @@ Open `http://localhost:3000`.
 - `npm run bridge:start` - start the local bridge service (localhost:3001)
 - `npm run test:mikrotik` - test direct MikroTik connection and create a sample voucher
 - `npm run ml:setup` - prepare ML data folders
+- `npm run ml:import -- --manifest path/to/manifest.json` - import internet-sourced images into the labeled dataset
+- `npm run ml:import:taco -- --annotations path/to/annotations.json` - import from the TACO dataset
 - `npm run ml:train` - train the fine-tuned model head
 - `npx prisma migrate dev` - run migrations and regenerate the client
-- `npx prisma db seed` - seed initial reward/voucher rules
+- `npx prisma db seed` (or `npm run db:seed`) - seed initial reward/voucher rules
 - `npx prisma studio` - open the database browser

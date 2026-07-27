@@ -207,12 +207,21 @@ Session auto-expires after 5 minutes if no deposit is made.
 ## Voucher / Reward Workflow
 
 1. User presses **Redeem** in the app.
-2. Backend deducts points atomically.
-3. Backend calls MikroTik RouterOS REST API → creates a hotspot user (`name=FBT-XXXX-XXXX-XXXX`, same value as password, `profile=1hour`).
+2. Backend deducts points — `spendPoints()` in `src/lib/points.ts` folds the "sufficient balance" check into the same atomic `UPDATE` as the decrement (`WHERE pointsBalance >= amount`), so two concurrent redemption requests can't both pass the check before either commits.
+3. Backend calls MikroTik RouterOS REST API → creates a hotspot user (`name=FBT-XXXX-XXXX-XXXX`, same value as password, `profile=1hour`). If this fails, the voucher is marked `FAILED` and the points are refunded in the same transaction pattern (`refundPoints()`).
 4. Voucher code stored in DB, returned immediately to the app.
 5. User enters the code at the MikroTik captive portal to get internet access.
 
 Points: PET\_BOTTLE = 5 pts · ALUMINUM\_CAN = 10 pts · 1 Hour WiFi = 100 pts
+
+### Voucher lifecycle and its limits
+
+`Voucher.status` moves `PENDING → ISSUED → EXPIRED`, or `PENDING → FAILED` on issuance failure. `expireStaleVouchers()` (`src/lib/voucher.ts`) sweeps `ISSUED` vouchers past their `expiresAt` to `EXPIRED` — called opportunistically from the wallet page, admin vouchers page, and admin dashboard on each load (no cron; it's a lazy sweep, same pattern as `expireStale()` for deposit sessions in `src/app/api/kiosk/session/route.ts`).
+
+Two things this system does **not** do, by design gap rather than by choice — noted here so they aren't mistaken for bugs:
+
+- **No `REDEEMED` tracking.** MikroTik doesn't report back when a voucher code is actually used to log into the hotspot, so the app has no way to distinguish "issued but never used" from "issued and used." `Voucher.status` only ever reflects issuance and time-based expiry, never actual usage — despite `REDEEMED` existing as a schema value, nothing currently sets it.
+- **No cleanup of the MikroTik-side hotspot user list.** Every voucher ever issued leaves a permanent `/ip/hotspot/user` entry on the router; the app never deletes it, including after the app marks the voucher `EXPIRED` on its own side. Left unpruned, this list grows without bound — see `CLIENT-GUIDE.md` §4 for the operational note.
 
 ---
 
@@ -314,7 +323,7 @@ BOOT → CONNECT WIFI → IDLE
 
 ## ML Classifier
 
-File: `src/lib/classifier.ts`
+File: `src/lib/classifier.ts` — see `docs/ml.md` for the full explanation of why it works this way, current accuracy, and what it takes to improve it. Summary:
 
 **Two modes, same function** (`classifyImage(buffer)`):
 
