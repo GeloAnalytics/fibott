@@ -14,14 +14,17 @@ type Phase =
   | { name: "expired" }
   | { name: "error"; message: string };
 
+// A lazy useState initializer here previously only ran once, while
+// expiresAt was still null on the idle render, leaving `remaining` stuck at
+// 0 the instant the session became active. Recomputing inside the effect
+// (a real subscription to the "expiresAt changed" + "one second elapsed"
+// external events) keeps it correct without ever reading Date.now() during
+// render, which the React Compiler's purity rule forbids.
 function useCountdown(expiresAt: Date | null): number {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-    if (!expiresAt) {
-      setRemaining(0);
-      return;
-    }
+    if (!expiresAt) return;
     const update = () => setRemaining(Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)));
     update();
     const tick = setInterval(update, 1000);
