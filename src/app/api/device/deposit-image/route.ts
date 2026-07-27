@@ -44,6 +44,12 @@ export async function POST(req: Request) {
       ? sessionCodeRaw
       : undefined;
 
+  const sessionIdRaw = form.get("sessionId");
+  const sessionId =
+    typeof sessionIdRaw === "string" && sessionIdRaw.length > 0
+      ? sessionIdRaw
+      : undefined;
+
   const imageBuffer = Buffer.from(await image.arrayBuffer());
 
   let classification;
@@ -56,6 +62,7 @@ export async function POST(req: Request) {
 
   const result = await processDeposit({
     deviceId: device.id,
+    sessionId,
     sessionCode,
     materialType: classification.materialType,
     classificationLabel: classification.label,

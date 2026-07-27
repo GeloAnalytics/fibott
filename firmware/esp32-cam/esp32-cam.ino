@@ -1,5 +1,5 @@
 /*
- * Fibott — ESP32-CAM firmware  (Version 1)
+ * Fibott — ESP32-CAM firmware
  *
  * Board:    AI Thinker ESP32-CAM  (Arduino IDE → Tools → Board)
  * PSRAM:    Tools → PSRAM → "OPI PSRAM"  (required)
@@ -8,20 +8,18 @@
  * Libraries (Sketch → Include Library → Manage Libraries):
  *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
  *
- * Mobile-first: polls the backend for a session, captures an image, uploads
- * it, and drives the gate servo — no UART, no controller board required.
- *
- * Flow:
- *   1. Connect to WiFi
- *   2. Poll GET /api/device/session every POLL_INTERVAL_MS
- *   3. When a session is found: capture → upload → drive servo → repeat
+ * State machine:
+ *   IDLE → poll /api/kiosk/session → if active: READY
+ *   READY → capture image → PROCESSING
+ *   PROCESSING → upload image → SUCCESS or ERROR
+ *   SUCCESS → open gate → wait GATE_OPEN_MS → IDLE
+ *   ERROR → wait RETRY_DELAY_MS → READY (retry) or IDLE (expired)
  *
  * ── GPIO assignments ───────────────────────────────────────────────────────
  *  GPIO13  Servo signal (safe, not a strapping pin)
  *  GPIO33  Onboard red status LED, active-LOW
  *
- * See hardware/README.md for full pinout and wiring detail.
- * See docs/SYSTEM.md for the active architecture.
+ * See docs/SYSTEM.md for the full architecture.
  */
 
 #include "config.h"
@@ -48,6 +46,13 @@
 #define CAM_VSYNC  25
 #define CAM_HREF   23
 #define CAM_PCLK   22
+
+// ── FSM states ────────────────────────────────────────────────────────────────
+enum KioskState { STATE_IDLE, STATE_READY, STATE_PROCESSING, STATE_SUCCESS, STATE_ERROR };
+static KioskState state = STATE_IDLE;
+
+// Persists across the READY/PROCESSING/SUCCESS/ERROR cycle for one session
+static char activeSessionId[128] = "";
 
 // ── Servo (esp-idf ledc, TIMER_0/CHANNEL_0 — camera uses TIMER_2/CHANNEL_2) ─
 static void servoSetup() {
@@ -121,46 +126,58 @@ static bool cameraInit() {
 }
 
 // ── Session polling ───────────────────────────────────────────────────────────
-// Returns the 6-digit session code if a session is ready, or "" if none/error.
-static String pollSession() {
+// Returns true and populates outSessionId if an active session is found.
+static bool pollSession(char *outSessionId, size_t maxLen) {
   WiFiClientSecure client;
   client.setInsecure();
   client.setTimeout(BACKEND_TIMEOUT_S);
 
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
     Serial.println("[poll] connect failed");
-    return "";
+    return false;
   }
 
-  client.printf("GET /api/device/session HTTP/1.1\r\n");
+  client.printf("GET /api/kiosk/session HTTP/1.1\r\n");
   client.printf("Host: %s\r\n", BACKEND_HOST);
   client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
   client.printf("Connection: close\r\n\r\n");
   client.flush();
 
-  String statusLine = client.readStringUntil('\n');
-  int statusCode = 0;
-  if (statusLine.startsWith("HTTP/1."))
-    statusCode = statusLine.substring(9, 12).toInt();
+  // Consume status line (we skip status code check — JSON content is the authority)
+  client.readStringUntil('\n');
+
   while (client.connected()) {
     if (client.readStringUntil('\n') == "\r") break;
   }
   String body = client.readString();
   client.stop();
 
-  if (statusCode != 200) return "";
+  // Strip chunked-encoding prefix (e.g. "83\r\n{...}\r\n0")
+  int jStart = body.indexOf('{');
+  int jEnd   = body.lastIndexOf('}');
+  String jsonBody = (jStart >= 0 && jEnd > jStart)
+                    ? body.substring(jStart, jEnd + 1)
+                    : body;
+
+  Serial.printf("[poll] body=%s\n", jsonBody.c_str());
 
   JsonDocument doc;
-  if (deserializeJson(doc, body) != DeserializationError::Ok) return "";
-  if (!doc["active"].as<bool>()) return "";
+  if (deserializeJson(doc, jsonBody) != DeserializationError::Ok) {
+    Serial.println("[poll] JSON parse error");
+    return false;
+  }
+  if (!doc["active"].as<bool>()) return false;
 
-  return doc["sessionCode"].as<String>();
+  const char *id = doc["sessionId"].as<const char *>();
+  if (!id) return false;
+  strncpy(outSessionId, id, maxLen - 1);
+  outSessionId[maxLen - 1] = '\0';
+  return true;
 }
 
 // ── Image upload ──────────────────────────────────────────────────────────────
-// Uploads the captured frame with the session code.
 // Returns "ACCEPT", "REJECT", or "" on any error.
-static String uploadImage(camera_fb_t *fb, const char *sessionCode) {
+static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   WiFiClientSecure client;
   client.setInsecure();
   client.setTimeout(BACKEND_TIMEOUT_S);
@@ -173,10 +190,10 @@ static String uploadImage(camera_fb_t *fb, const char *sessionCode) {
   const char *boundary = "FibottBoundary42";
 
   String sessionPart;
-  if (sessionCode && strlen(sessionCode) == 6) {
+  if (sessionId && strlen(sessionId) > 0) {
     sessionPart  = "--"; sessionPart += boundary; sessionPart += "\r\n";
-    sessionPart += "Content-Disposition: form-data; name=\"sessionCode\"\r\n\r\n";
-    sessionPart += sessionCode;
+    sessionPart += "Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n";
+    sessionPart += sessionId;
     sessionPart += "\r\n";
   }
 
@@ -206,21 +223,25 @@ static String uploadImage(camera_fb_t *fb, const char *sessionCode) {
   client.print(footer);
   client.flush();
 
-  String statusLine2 = client.readStringUntil('\n');
-  int statusCode = 0;
-  if (statusLine2.startsWith("HTTP/1."))
-    statusCode = statusLine2.substring(9, 12).toInt();
+  client.readStringUntil('\n'); // consume status line
+
   while (client.connected()) {
     if (client.readStringUntil('\n') == "\r") break;
   }
   String body = client.readString();
   client.stop();
 
-  Serial.printf("[http] %d — %s\n", statusCode, body.c_str());
-  if (statusCode != 200) return "";
+  // Strip chunked-encoding prefix
+  int jStart = body.indexOf('{');
+  int jEnd   = body.lastIndexOf('}');
+  String jsonBody = (jStart >= 0 && jEnd > jStart)
+                    ? body.substring(jStart, jEnd + 1)
+                    : body;
+
+  Serial.printf("[http] %s\n", jsonBody.c_str());
 
   JsonDocument doc;
-  if (deserializeJson(doc, body) != DeserializationError::Ok) return "";
+  if (deserializeJson(doc, jsonBody) != DeserializationError::Ok) return "";
   return doc["servoAction"].as<String>();
 }
 
@@ -259,44 +280,96 @@ void setup() {
   Serial.printf("\n[wifi] %s\n", WiFi.localIP().toString().c_str());
 
   ledOn(); delay(200); ledOff();
-  Serial.println("[boot] ready — polling for sessions");
+  Serial.println("[boot] ready — entering IDLE");
 }
 
-// ── Loop ──────────────────────────────────────────────────────────────────────
+// ── Main loop (FSM) ───────────────────────────────────────────────────────────
 void loop() {
   ensureWifi();
 
-  String code = pollSession();
-  if (!code.length()) {
-    delay(POLL_INTERVAL_MS);
-    return;
+  switch (state) {
+
+    case STATE_IDLE: {
+      char sessionId[128] = "";
+      if (!pollSession(sessionId, sizeof(sessionId))) {
+        delay(POLL_INTERVAL_MS);
+        break;
+      }
+      strncpy(activeSessionId, sessionId, sizeof(activeSessionId));
+      Serial.printf("[fsm] IDLE → READY  session=%s\n", activeSessionId);
+      state = STATE_READY;
+      break;
+    }
+
+    case STATE_READY: {
+      Serial.println("[fsm] READY — waiting for item");
+      // Blink rapidly to signal "place item now", then hold on before capture
+      for (int i = 0; i < 6; i++) { ledOn(); delay(200); ledOff(); delay(200); }
+      delay(2000);   // 2 s steady pause — user places item in frame
+      Serial.println("[fsm] READY — capturing image");
+      ledOn();
+      state = STATE_PROCESSING;
+      break;
+    }
+
+    case STATE_PROCESSING: {
+      camera_fb_t *fb = esp_camera_fb_get();
+      if (!fb) {
+        Serial.println("[cam] capture failed — retrying");
+        ledOff();
+        delay(POLL_INTERVAL_MS);
+        // Stay in PROCESSING to retry capture
+        break;
+      }
+      Serial.printf("[cam] %u bytes\n", fb->len);
+
+      String action = uploadImage(fb, activeSessionId);
+      esp_camera_fb_return(fb);
+      ledOff();
+
+      if (action == "ACCEPT") {
+        Serial.println("[fsm] PROCESSING → SUCCESS");
+        state = STATE_SUCCESS;
+      } else if (action == "REJECT") {
+        Serial.println("[fsm] PROCESSING → ERROR (rejected)");
+        state = STATE_ERROR;
+      } else {
+        // Upload failed — poll to see if session is still valid before retrying
+        Serial.println("[fsm] PROCESSING → ERROR (upload failed)");
+        state = STATE_ERROR;
+      }
+      break;
+    }
+
+    case STATE_SUCCESS: {
+      Serial.println("[gate] ACCEPT — opening");
+      gateOpen();
+      delay(GATE_OPEN_MS);
+      gateClose();
+      Serial.println("[gate] closed");
+      activeSessionId[0] = '\0';
+      Serial.println("[fsm] SUCCESS → IDLE");
+      state = STATE_IDLE;
+      break;
+    }
+
+    case STATE_ERROR: {
+      Serial.println("[fsm] ERROR — checking session");
+      // Check if the session is still active; if yes, go back to READY for a retry
+      char sessionId[128] = "";
+      bool stillActive = pollSession(sessionId, sizeof(sessionId))
+                         && strcmp(sessionId, activeSessionId) == 0;
+
+      if (stillActive) {
+        Serial.println("[fsm] ERROR → READY (retry)");
+        delay(RETRY_DELAY_MS);
+        state = STATE_READY;
+      } else {
+        Serial.println("[fsm] ERROR → IDLE (session gone)");
+        activeSessionId[0] = '\0';
+        state = STATE_IDLE;
+      }
+      break;
+    }
   }
-
-  Serial.printf("[session] active — code=%s\n", code.c_str());
-  ledOn();
-
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("[cam] capture failed");
-    ledOff();
-    delay(POLL_INTERVAL_MS);
-    return;
-  }
-  Serial.printf("[cam] %u bytes\n", fb->len);
-
-  String action = uploadImage(fb, code.c_str());
-  esp_camera_fb_return(fb);
-  ledOff();
-
-  if (action == "ACCEPT") {
-    Serial.println("[gate] ACCEPT — opening");
-    gateOpen();
-    delay(GATE_OPEN_MS);
-    gateClose();
-    Serial.println("[gate] closed");
-  } else {
-    Serial.println("[gate] REJECT — gate stays closed");
-  }
-
-  delay(POLL_INTERVAL_MS);
 }

@@ -1,6 +1,6 @@
 # Fibott — System Reference
 
-**Version:** 1.0 · **Architecture:** Mobile-first, single-board kiosk
+**Version:** 2.0 · **Architecture:** Mobile-first, single-board kiosk
 
 Fibott is a reverse-vending kiosk that awards internet vouchers for deposited recyclable bottles and cans. The mobile app is the only user interface; the ESP32-CAM is the only embedded controller.
 
@@ -54,7 +54,8 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
               BridgeClient
                     │
                     ▼
-            Cloudflare Tunnel
+            zrok Tunnel
+      https://<token>.share.zrok.io
                     │
                     ▼
             Bridge Service
@@ -65,7 +66,7 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
               192.168.88.1
 ```
 
-The router is never exposed directly to the internet. Set `BRIDGE_URL` to the Cloudflare Tunnel URL.
+The router is never exposed directly to the internet. Set `BRIDGE_URL` to the permanent zrok share URL.
 
 ---
 
@@ -87,7 +88,7 @@ The router is never exposed directly to the internet. Set `BRIDGE_URL` to the Cl
 
 | Variable | Value |
 |---|---|
-| `BRIDGE_URL` | `https://<your-tunnel>.cfargotunnel.com` |
+| `BRIDGE_URL` | `https://<token>.share.zrok.io` |
 | `BRIDGE_SECRET` | _(shared bearer secret between Vercel and bridge)_ |
 
 All other `MIKROTIK_*` vars are only needed locally; the bridge holds them and they never leave the LAN.
@@ -96,36 +97,40 @@ All other `MIKROTIK_*` vars are only needed locally; the bridge holds them and t
 
 ## Bridge service
 
-File: `infra/bridge/server.ts` — runs on the same machine as the MikroTik router.
-
-Start with:
-
-```bash
-npm run bridge:start
-```
+File: `infra/bridge/server.ts` — runs on the LAN machine alongside the MikroTik router.
 
 The bridge listens on `localhost:3001`, validates the `Authorization: Bearer <BRIDGE_SECRET>` header, creates the hotspot user via the local MikroTik REST API, and returns the credentials.
 
-For production, expose it through a permanent Cloudflare tunnel:
+### First-time setup (run once per machine)
 
-```bash
-cloudflared tunnel login
-cloudflared tunnel create fibott-mikrotik
-cloudflared service install
-Start-Service cloudflared
+Follow `infra/zrok-tunnel.ps1` step-by-step:
+
+1. `winget install OpenZiti.zrok`
+2. Create a free account at https://zrok.io
+3. `zrok enable <token>` — links this machine to your account
+4. `zrok reserve public http://localhost:3001 --backend-mode proxy` — prints a permanent share token and URL
+5. Set that URL as `BRIDGE_URL` in Vercel (run `infra/push-vercel-env.ps1`)
+
+### Daily operation
+
+```powershell
+.\infra\start-bridge.ps1
 ```
 
-For quick local testing, use a Quick Tunnel (disappears when cloudflared stops):
+`start-bridge.ps1` starts the bridge and the zrok tunnel together. Edit that file once to fill in your `ZROK_SHARE_TOKEN`.
 
-```bash
-cloudflared tunnel --url http://localhost:3001
-```
+### Auto-start on boot (Task Scheduler)
+
+Open Task Scheduler → Create Basic Task:
+- Trigger: **At startup** (or At log on)
+- Action: Start a program — `powershell.exe`
+- Arguments: `-WindowStyle Hidden -File "C:\path\to\Fibott\infra\start-bridge.ps1"`
 
 ---
 
 ## Components
 
-**Mobile App** — primary UI. Login, start deposit, view points, redeem voucher, view history. No physical kiosk buttons.
+**Mobile App** — primary UI. Login, start recycling session, view points, redeem voucher, view history.
 
 **ESP32-CAM** — kiosk board. Polls backend for active sessions, captures images, uploads frames, drives the servo gate. Contains no business logic.
 
@@ -142,33 +147,66 @@ cloudflared tunnel --url http://localhost:3001
 | Endpoint | Caller | Purpose |
 |---|---|---|
 | `POST /api/auth/*` | Mobile App | Login, register, password reset |
-| `POST /api/deposit-sessions` | Mobile App | Start a deposit session |
-| `GET /api/device/session` | ESP32-CAM | Poll for active session (claims it atomically) |
-| `POST /api/device/deposit-image` | ESP32-CAM | Upload captured frame → classify → award points |
+| `POST /api/kiosk/session` | Mobile App | Start a recycling session |
+| `GET /api/kiosk/session` | ESP32-CAM | Poll for active session (device API key) |
+| `GET /api/kiosk/session` | Mobile App | Check own session status (user cookie, `?id=<sessionId>`) |
+| `POST /api/device/deposit-image` | ESP32-CAM | Upload captured frame → classify → award points → complete session |
 | `POST /api/device/scan` | ESP32-CAM (test) | Pre-classified result, no image upload |
 | `POST /api/vouchers/redeem` | Mobile App | Spend points → create MikroTik hotspot user → return voucher code |
-| ~~`POST /api/device/sessions/claim`~~ | Legacy | Retained for migration only |
-| ~~`POST /api/device/sessions/activate`~~ | Legacy | Retained for migration only |
+
+### Deprecated (retained for migration only)
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/deposit-sessions` | Replaced by `POST /api/kiosk/session` |
+| `GET /api/device/session` | Replaced by `GET /api/kiosk/session` |
+| `POST /api/device/sessions/claim` | Legacy |
+| `POST /api/device/sessions/activate` | Legacy |
 
 ---
 
-## Deposit Workflow
+## Deposit / Recycling Workflow
 
-1. User connects to Fibott WiFi (MikroTik hotspot, Walled Garden allows the app without a voucher).
-2. User logs in and presses **Start Deposit**.
-3. Backend creates a `PENDING` deposit session.
-4. ESP32-CAM polls `GET /api/device/session` every ~1.5 s; backend atomically claims the session and returns the session code.
-5. User inserts a bottle or can.
-6. ESP32-CAM captures a JPEG and POSTs it to `/api/device/deposit-image` with the session code.
-7. Backend classifies the image → awards points if accepted → returns `servoAction: ACCEPT | REJECT`.
-8. ESP32-CAM opens the servo gate for 3 s on ACCEPT; gate stays closed on REJECT.
-9. Session is marked complete.
+```
+User presses Start Recycling
+    │
+    ▼
+POST /api/kiosk/session → DepositSession created (status=ACTIVE, TTL=5 min)
+    │
+    ▼ (ESP32 polling every 2 s)
+GET /api/kiosk/session → { active: true, sessionId, expiresAt }
+    │
+    ▼
+ESP32: IDLE → READY → PROCESSING
+    │
+    ▼
+User inserts bottle or can
+    │
+    ▼
+POST /api/device/deposit-image (multipart: image + sessionId)
+    │
+    ├── classifyImage() → materialType
+    ├── processDeposit() → Deposit record + points awarded
+    ├── DepositSession.status = COMPLETED
+    └── returns { servoAction: ACCEPT | REJECT }
+    │
+    ▼
+ESP32: gate opens 3 s on ACCEPT, stays closed on REJECT → back to IDLE
+    │
+    ▼ (frontend polling every 2 s)
+GET /api/kiosk/session?id=<sessionId> → { status: COMPLETED, pointsAwarded }
+    │
+    ▼
+Dashboard shows "Deposit successful! +N points"
+```
+
+Session auto-expires after 5 minutes if no deposit is made.
 
 ---
 
 ## Voucher / Reward Workflow
 
-1. User presses **Redeem** in the app (no re-login required — session already active).
+1. User presses **Redeem** in the app.
 2. Backend deducts points atomically.
 3. Backend calls MikroTik RouterOS REST API → creates a hotspot user (`name=FBT-XXXX-XXXX-XXXX`, same value as password, `profile=1hour`).
 4. Voucher code stored in DB, returned immediately to the app.
@@ -185,9 +223,9 @@ Unauthenticated users (no voucher) can reach only:
 | Domain | Reason |
 |---|---|
 | `fibott.vercel.app` | The app itself (login, deposit, redeem) |
-| `accounts.google.com` | Google OAuth — only needed if Google Sign-In must work before a voucher |
+| `accounts.google.com` | Google OAuth |
 
-Everything else (Facebook, YouTube, Google Search, etc.) stays blocked until a valid voucher is used.
+Everything else stays blocked until a valid voucher is used.
 
 ---
 
@@ -201,8 +239,6 @@ Everything else (Facebook, YouTube, Google Search, etc.) stays blocked until a v
 | MG90S servo (metal gear, micro) | Opens/closes intake gate |
 | Dedicated 5V/1A supply (servo rail) | Separate from camera supply |
 | Dedicated 5V/500mA+ supply (camera rail) | Do not share with servo |
-
-**Legacy / spare:** bare ESP32 dev board — migration support only, not active kiosk hardware.
 
 ### ESP32-CAM safe GPIO
 
@@ -225,13 +261,6 @@ ESP32-CAM GPIO13 → servo signal (optional 220–470 Ω series resistor)
 
 Do not power the servo from the ESP32-CAM board's own rail — camera WiFi TX spikes will brown-out a shared supply.
 
-### Power rails
-
-| Rail | Feeds | Note |
-|---|---|---|
-| A | ESP32-CAM-MB | 5V, 500 mA+ via micro-USB or dedicated supply |
-| B | MG90S servo | 5V, ~1A dedicated; common GND with Rail A |
-
 ---
 
 ## Firmware
@@ -248,8 +277,9 @@ Sketch: `firmware/esp32-cam/esp32-cam.ino`
 | `DEVICE_API_KEY` | Plaintext key from seed output |
 | `PIN_SERVO` | `13` |
 | `SERVO_CLOSED_US` / `SERVO_OPEN_US` | Calibrate after assembly |
-| `POLL_INTERVAL_MS` | `1500` (1–2 s per design spec) |
+| `POLL_INTERVAL_MS` | `2000` |
 | `GATE_OPEN_MS` | `3000` |
+| `RETRY_DELAY_MS` | `2000` |
 
 ### Flash
 
@@ -261,10 +291,17 @@ Sketch: `firmware/esp32-cam/esp32-cam.ino`
 ### ESP32-CAM state machine
 
 ```
-BOOT → CONNECT WIFI → IDLE → POLL SESSION
-         → SESSION FOUND → CAPTURE IMAGE → UPLOAD IMAGE
-         → WAIT VALIDATION → [ACCEPT] OPEN SERVO → CLOSE SERVO
-         → SESSION COMPLETE → IDLE
+BOOT → CONNECT WIFI → IDLE
+  IDLE: poll /api/kiosk/session every 2 s
+    → session found → READY
+  READY: capture image immediately → PROCESSING
+  PROCESSING: upload to /api/device/deposit-image
+    → ACCEPT → SUCCESS
+    → REJECT / error → ERROR
+  SUCCESS: open gate 3 s → close gate → IDLE
+  ERROR: check if session still active
+    → still active → READY (retry)
+    → gone / expired → IDLE
 ```
 
 ### Device provisioning
@@ -282,21 +319,16 @@ File: `src/lib/classifier.ts`
 **Two modes, same function** (`classifyImage(buffer)`):
 
 1. **Fine-tuned head** (`models/bottle-can-head/weights.json`) — if the file exists, used automatically.
-2. **Zero-shot fallback** — keyword mapping over MobileNetV2 ImageNet labels. Active now. Can mapping is weak; bottle mapping is reasonable.
+2. **Zero-shot fallback** — keyword mapping over MobileNetV2 ImageNet labels. Active now.
 
 `MIN_CONFIDENCE = 0.15` — predictions below this threshold become `REJECTED`.
 
 ### Training workflow
 
 ```bash
-# Import TACO dataset (downloads ~417 images from Flickr)
 npm run ml:import:taco -- --annotations "path/to/annotations.json" --max-per-label 139
-
-# Train the fine-tuned head (reads ml-data/, writes models/bottle-can-head/weights.json)
 npm run ml:train
 ```
-
-TACO label mapping: categories 4+5 → `PET_BOTTLE` · category 10+12 → `ALUMINUM_CAN` · everything else → `REJECTED`.
 
 ---
 
@@ -306,4 +338,5 @@ TACO label mapping: categories 4+5 → `PET_BOTTLE` · category 10+12 → `ALUMI
 - Backend owns all business logic; ESP32-CAM owns only hardware control.
 - MikroTik owns only networking; it never knows about points or recycling.
 - Walled Garden lets users earn and redeem before they have internet access.
+- One kiosk, one active session at a time. Multi-kiosk requires adding `kioskId` to sessions.
 - Simplicity and reliability over premature optimization.

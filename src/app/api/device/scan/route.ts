@@ -5,6 +5,7 @@ import { processDeposit } from "@/lib/deposit";
 
 const schema = z.object({
   sessionCode: z.string().length(6).optional(),
+  sessionId: z.string().optional(),
   classificationLabel: z.string().min(1),
   materialType: z.enum(["PET_BOTTLE", "ALUMINUM_CAN", "REJECTED"]),
   confidence: z.number().min(0).max(1),
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
 
   const result = await processDeposit({
     deviceId: device.id,
+    sessionId: parsed.data.sessionId,
     sessionCode: parsed.data.sessionCode,
     materialType: parsed.data.materialType,
     classificationLabel: parsed.data.classificationLabel,

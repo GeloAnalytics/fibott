@@ -8,6 +8,7 @@ type Tx = Prisma.TransactionClient;
 export interface ProcessDepositParams {
   deviceId: string;
   sessionCode?: string;
+  sessionId?: string;
   materialType: MaterialType;
   classificationLabel: string;
   confidence: number;
@@ -36,9 +37,11 @@ export async function processDeposit(
   params: ProcessDepositParams
 ): Promise<ProcessDepositResult> {
   return prisma.$transaction(async (tx: Tx) => {
-    const depositSession = params.sessionCode
-      ? await tx.depositSession.findUnique({ where: { code: params.sessionCode } })
-      : null;
+    const depositSession = params.sessionId
+      ? await tx.depositSession.findUnique({ where: { id: params.sessionId } })
+      : params.sessionCode
+        ? await tx.depositSession.findUnique({ where: { code: params.sessionCode } })
+        : null;
 
     const activeSession =
       depositSession &&
@@ -121,6 +124,11 @@ export async function processDeposit(
       amount: rewardRule.pointsPerItem,
       source: "DEPOSIT",
       depositId: deposit.id,
+    });
+
+    await tx.depositSession.update({
+      where: { id: activeSession.id },
+      data: { status: "COMPLETED", completedAt: new Date() },
     });
 
     return {

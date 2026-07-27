@@ -1,13 +1,13 @@
 #pragma once
 
 // ── WiFi ─────────────────────────────────────────────────────────────────────
-#define WIFI_SSID     "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID     "Fibott"
+#define WIFI_PASSWORD "Fibott@2026"
 
 // ── Backend ───────────────────────────────────────────────────────────────────
-#define BACKEND_HOST  "your-app.vercel.app"   // no https:// prefix
+#define BACKEND_HOST  "fibott.vercel.app"
 #define BACKEND_PORT  443
-#define DEVICE_API_KEY "your-esp32-cam-api-key-here"
+#define DEVICE_API_KEY "fibott_dev_7cd2f63b3fcaae7fa973ea58d8f94680df86c05f589bd189"
 
 // ── Servo ─────────────────────────────────────────────────────────────────────
 // GPIO13 is safe (not a strapping pin). Do NOT use GPIO12 (MTDI strapping pin).
@@ -20,5 +20,6 @@
 
 // ── Timing ────────────────────────────────────────────────────────────────────
 #define BACKEND_TIMEOUT_S 15    // WiFiClientSecure timeout for uploads
-#define POLL_INTERVAL_MS  1500  // session polling interval (~1-2 s per SYSTEM.md)
+#define POLL_INTERVAL_MS  2000  // session polling interval
 #define GATE_OPEN_MS      3000  // how long to hold the gate open after ACCEPT
+#define RETRY_DELAY_MS    2000  // pause before retrying after ERROR state

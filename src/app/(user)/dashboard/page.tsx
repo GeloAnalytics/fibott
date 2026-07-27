@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { HeroStat } from "@/components/shared/hero-stat";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { RecyclingSession } from "@/components/user/recycling-session";
 import { formatDistanceToNow } from "date-fns";
 
 export default async function DashboardPage() {
@@ -45,6 +46,11 @@ export default async function DashboardPage() {
         <StatCard label="Items recycled" value={itemsSubmitted} />
         <StatCard label="Active vouchers" value={activeVouchers} />
         <StatCard label="Recent transactions" value={recentActivity.length} />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-lg font-medium">Recycle</h2>
+        <RecyclingSession />
       </div>
 
       <div>
