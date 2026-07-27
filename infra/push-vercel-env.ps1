@@ -1,5 +1,5 @@
 # Push MikroTik env vars to Vercel production.
-# Run AFTER setting up the zrok tunnel and getting your permanent share URL.
+# Run AFTER setting up the ngrok tunnel and reserving your static domain.
 #
 # Prerequisites:
 #   npm i -g vercel
@@ -7,9 +7,8 @@
 #
 # Fill in the values below, then run this script from the project root.
 
-# zrok permanent share URL pointing to the bridge (localhost:3001 on your LAN machine).
-# Get this from: zrok reserve public http://localhost:3001 --backend-mode proxy
-# Format:  https://<share-token>.share.zrok.io
+# ngrok static domain pointing to the bridge (localhost:3001 on your LAN machine).
+# Reserve one at https://dashboard.ngrok.com (free tier includes one static domain).
 $BRIDGE_URL    = "https://cushy-tapeless-dividable.ngrok-free.app"
 
 # Shared bearer secret between Vercel and the bridge.

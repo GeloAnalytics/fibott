@@ -20,7 +20,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 2. **Set up a verified sending domain in Resend, or password reset will silently fail.** Right now `EMAIL_FROM` is `onboarding@resend.dev` — Resend's sandbox address, which only delivers to the Resend account owner's own inbox. Registration doesn't need email anymore (it auto-verifies), but **"Forgot password" still sends a real email**, and that email will never arrive for a real user until a custom domain is verified in Resend. The app will tell the user "check your email" either way — it has no way to know delivery failed. Until this is fixed, there is no way for a user who forgets their password to get back in except an admin resetting it manually in the database.
 
-3. **Get the bridge running before going live**, or every voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted app (once deployed) cannot reach directly. The bridge service + zrok tunnel solve this — follow `infra/zrok-tunnel.ps1` step by step, then keep the bridge PC running via `infra/start-bridge.ps1` (there are instructions in that file for making it auto-start on boot). If you're still testing on the same local network as the router, this isn't needed yet — but it is required the moment the app is deployed anywhere else.
+3. **Get the bridge running before going live**, or every voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted app (once deployed) cannot reach directly. The bridge service + ngrok tunnel solve this — the tunnel's static domain (`cushy-tapeless-dividable.ngrok-free.app`) is already reserved, so just keep the bridge PC running via `infra/start-bridge.ps1` (there are instructions in that file for making it auto-start on boot). If you're still testing on the same local network as the router, this isn't needed yet — but it is required the moment the app is deployed anywhere else.
 
 4. **Save the device API keys.** `npx prisma db seed` prints each device's API key exactly once. If you lose it, you have to regenerate it and reflash the kiosk's firmware. Store it somewhere durable (password manager, not a sticky note).
 
@@ -32,7 +32,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 ## 3. Daily / weekly operation
 
-**Keep the bridge PC on.** If it (or its internet connection, or the zrok tunnel) goes down, recycling still works — points still get awarded — but **voucher redemption will fail** for everyone until it's back up. This is the single most common way the system will look "broken" day to day.
+**Keep the bridge PC on.** If it (or its internet connection, or the ngrok tunnel) goes down, recycling still works — points still get awarded — but **voucher redemption will fail** for everyone until it's back up. This is the single most common way the system will look "broken" day to day.
 
 **Check these admin pages regularly:**
 
@@ -64,7 +64,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Voucher redemption fails / "couldn't issue voucher" | Bridge PC off, zrok tunnel dropped, or the router itself is unreachable | Check the bridge PC is on and connected; check `infra/start-bridge.ps1` is running; points are automatically refunded on failure, so the user hasn't lost anything |
+| Voucher redemption fails / "couldn't issue voucher" | Bridge PC off, ngrok tunnel dropped, or the router itself is unreachable | Check the bridge PC is on and connected; check `infra/start-bridge.ps1` is running; points are automatically refunded on failure, so the user hasn't lost anything |
 | A user says a redemption failed but their "points spent" total looks off | This was a real bug, fixed 2026-07-27 — refunded attempts were inflating the spent total even though the balance was correct. If you still see this after that date, something regressed — flag it | — |
 | "Start Recycling" flashes to "Session expired" immediately | This was a real bug, fixed 2026-07-27 — a timing issue in the countdown made the app declare the session expired the instant it started, even though the kiosk was still waiting. Should not recur | If it does, capture a screenshot and check the server logs around that timestamp |
 | A user never received their "reset password" email | Resend sandbox domain limitation — see §2, item 2 | Verify a sending domain in Resend, or reset the user's password directly |

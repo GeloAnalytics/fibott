@@ -21,7 +21,7 @@ Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-
 | Frontend — admin pages | ✅ Done | Users, deposits, vouchers, rewards, audit log, reports |
 | ESP32-CAM firmware | ✅ Done | FSM: IDLE → READY → PROCESSING → SUCCESS/ERROR; polls `/api/kiosk/session` |
 | Bridge service | ✅ Done | `infra/bridge/server.ts` — `npm run bridge:start` |
-| Tunnel — zrok setup | ✅ Done | `infra/zrok-tunnel.ps1` + `infra/start-bridge.ps1` |
+| Tunnel — ngrok setup | ✅ Done | Static domain `cushy-tapeless-dividable.ngrok-free.app` + `infra/start-bridge.ps1` |
 | MikroTik hotspot | ✅ Done | Walled Garden: `fibott.vercel.app` + `accounts.google.com` |
 | RouterOS REST API (www service) | ✅ Done | Verified working — `npm run test:mikrotik` passes |
 | TypeScript build | ✅ Clean | `tsc --noEmit` passes with no errors |
@@ -30,8 +30,8 @@ Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-
 | ML classifier accuracy | 🟡 Low | ~10% val accuracy — retrain after collecting real kiosk captures |
 | MikroTik `fibott-api` user | ❌ Needed | REST permission issues unresolved; still using `admin` |
 | MikroTik `1hour` profile | ❓ Verify | Confirm with `/ip/hotspot/user/profile/print` |
-| zrok permanent share | ❌ Needed | Follow `infra/zrok-tunnel.ps1` — reserve once, URL never changes |
-| Vercel env vars (`BRIDGE_URL`, `BRIDGE_SECRET`) | ❌ Needed | Run `infra/push-vercel-env.ps1` after zrok share is reserved |
+| ngrok static domain | ✅ Done | Reserved: `cushy-tapeless-dividable.ngrok-free.app` (never changes) |
+| Vercel env vars (`BRIDGE_URL`, `BRIDGE_SECRET`) | ❓ Verify | Values are ready in `infra/push-vercel-env.ps1` / `.env.local` — confirm `vercel env add` was actually run against production |
 | End-to-end local validation | ✅ Done (2026-07-27) | Browser-verified: login → Start Recycling → simulated deposit → points awarded → wallet redeem → real MikroTik voucher issued (this machine has direct router access) |
 | End-to-end **production** validation | ❌ Needed | Same flow through the deployed Vercel app + bridge/tunnel, plus real hotspot login with an issued voucher code |
 | Password reset email delivery | ❌ Needed | `EMAIL_FROM` is still Resend's sandbox address — reset emails silently fail to reach anyone but the Resend account owner until a custom domain is verified. Registration no longer needs email (auto-verifies), but this path still does |
@@ -85,27 +85,21 @@ The dedicated API account hits permission errors with RouterOS REST. Until resol
 
 The account needs at minimum `read` + `write` on `/rest/ip/hotspot/user`.
 
-### C. Set up zrok permanent tunnel (10 min)
+### C. ngrok permanent tunnel — already set up
 
-Run from the LAN machine that will host the bridge service. Full script: `infra/zrok-tunnel.ps1`.
+Run from the LAN machine that hosts the bridge service (already done on this machine — reproduce here only if moving the bridge to a new machine):
 
 ```bash
-# 1. Install zrok
-winget install OpenZiti.zrok
+# 1. Install ngrok and sign up at https://ngrok.com (free, static domain included)
 
-# 2. Sign up at https://zrok.io (free, no credit card)
-#    Copy your Enable Token from the dashboard.
+# 2. Add the authtoken (one-time per machine)
+ngrok config add-authtoken <YOUR-AUTHTOKEN>
 
-# 3. Enable zrok on this machine (one-time)
-zrok enable <YOUR-ENABLE-TOKEN>
+# 3. Reserve a static domain in the ngrok dashboard — URL never changes across restarts
+#    Already reserved: cushy-tapeless-dividable.ngrok-free.app
 
-# 4. Reserve a permanent share — URL never changes across restarts
-zrok reserve public http://localhost:3001 --backend-mode proxy
-# → prints your share token, e.g.: abc123def456
-# → your permanent URL: https://abc123def456.share.zrok.io
-
-# 5. Fill in ZROK_SHARE_TOKEN in infra/start-bridge.ps1
-# 6. Fill in BRIDGE_URL in infra/push-vercel-env.ps1, then run it
+# 4. Domain is hardcoded in infra/start-bridge.ps1 ($NGROK_DOMAIN) — edit only if it changes
+# 5. BRIDGE_URL / BRIDGE_SECRET are already filled in infra/push-vercel-env.ps1 — run it, then `vercel --prod`
 ```
 
 ### D. Push production env vars to Vercel (5 min)

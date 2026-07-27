@@ -2,7 +2,7 @@
  * Fibott Bridge Service
  *
  * Runs on the LAN machine alongside the MikroTik router.
- * Receives authenticated requests from Vercel (via Cloudflare Tunnel) and
+ * Receives authenticated requests from Vercel (via ngrok tunnel) and
  * forwards them to the RouterOS REST API.
  *
  * Usage (from project root):

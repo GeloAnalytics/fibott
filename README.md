@@ -26,7 +26,7 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 - ESP32-CAM session-polling workflow and firmware complete
 - MikroTik RouterOS REST integration verified (`npm run test:mikrotik` → `✓ Created hotspot user`)
 - Hotspot and Walled Garden configured — `fibott.vercel.app` and `accounts.google.com` accessible before WiFi auth
-- Bridge architecture in place: direct MikroTik for local dev, bridge + zrok Tunnel for production
+- Bridge architecture in place: direct MikroTik for local dev, bridge + ngrok Tunnel for production
 - ML training pipeline complete; accuracy is low (~10%) due to outdoor TACO dataset — retrain with real kiosk captures (see `docs/ml.md`)
 - QA pass completed 2026-07-27: fixed a recycling-session frontend/backend desync, stale voucher status display, a points-spent double-count, and a points-balance race condition — see `docs/CLIENT-GUIDE.md` §6 for the list
 - See `docs/STATUS.md` for the remaining action plan (permanent tunnel, Vercel env vars, end-to-end test)
@@ -77,9 +77,9 @@ Optional — local development (direct MikroTik):
 - `MIKROTIK_INSECURE_TLS`
 - `FIBOTT_ML_HEAD_PATH`
 
-Optional — production (bridge via zrok Tunnel):
+Optional — production (bridge via ngrok Tunnel):
 
-- `BRIDGE_URL` — set to the permanent zrok share URL (e.g. `https://<token>.share.zrok.io`, from `infra/zrok-tunnel.ps1`). When set, all MikroTik calls go through the bridge service instead of hitting the router directly. Required once the app is deployed anywhere other than the router's own LAN — voucher redemption fails without it.
+- `BRIDGE_URL` — set to the permanent ngrok static domain (e.g. `https://cushy-tapeless-dividable.ngrok-free.app`, started via `infra/start-bridge.ps1`). When set, all MikroTik calls go through the bridge service instead of hitting the router directly. Required once the app is deployed anywhere other than the router's own LAN — voucher redemption fails without it.
 - `BRIDGE_SECRET` — shared bearer secret between Vercel and the bridge service.
 
 Leave `BRIDGE_URL` empty (or unset) for local development.

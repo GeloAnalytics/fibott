@@ -54,8 +54,8 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
               BridgeClient
                     │
                     ▼
-            zrok Tunnel
-      https://<token>.share.zrok.io
+            ngrok Tunnel
+      https://cushy-tapeless-dividable.ngrok-free.app
                     │
                     ▼
             Bridge Service
@@ -66,7 +66,7 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
               192.168.88.1
 ```
 
-The router is never exposed directly to the internet. Set `BRIDGE_URL` to the permanent zrok share URL.
+The router is never exposed directly to the internet. Set `BRIDGE_URL` to the permanent ngrok domain.
 
 ---
 
@@ -88,7 +88,7 @@ The router is never exposed directly to the internet. Set `BRIDGE_URL` to the pe
 
 | Variable | Value |
 |---|---|
-| `BRIDGE_URL` | `https://<token>.share.zrok.io` |
+| `BRIDGE_URL` | `https://cushy-tapeless-dividable.ngrok-free.app` |
 | `BRIDGE_SECRET` | _(shared bearer secret between Vercel and bridge)_ |
 
 All other `MIKROTIK_*` vars are only needed locally; the bridge holds them and they never leave the LAN.
@@ -103,13 +103,10 @@ The bridge listens on `localhost:3001`, validates the `Authorization: Bearer <BR
 
 ### First-time setup (run once per machine)
 
-Follow `infra/zrok-tunnel.ps1` step-by-step:
-
-1. `winget install OpenZiti.zrok`
-2. Create a free account at https://zrok.io
-3. `zrok enable <token>` — links this machine to your account
-4. `zrok reserve public http://localhost:3001 --backend-mode proxy` — prints a permanent share token and URL
-5. Set that URL as `BRIDGE_URL` in Vercel (run `infra/push-vercel-env.ps1`)
+1. Install ngrok and sign up at https://ngrok.com (free tier includes one static domain)
+2. `ngrok config add-authtoken <token>` — links this machine to your account
+3. Reserve a static domain in the ngrok dashboard (e.g. `cushy-tapeless-dividable.ngrok-free.app`) — this URL never changes across restarts
+4. Set that URL as `BRIDGE_URL` in Vercel (run `infra/push-vercel-env.ps1`)
 
 ### Daily operation
 
@@ -117,7 +114,7 @@ Follow `infra/zrok-tunnel.ps1` step-by-step:
 .\infra\start-bridge.ps1
 ```
 
-`start-bridge.ps1` starts the bridge and the zrok tunnel together. Edit that file once to fill in your `ZROK_SHARE_TOKEN`.
+`start-bridge.ps1` starts the bridge and the ngrok tunnel together. The domain is hardcoded at the top of that file (`$NGROK_DOMAIN`).
 
 ### Auto-start on boot (Task Scheduler)
 
