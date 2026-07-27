@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { expireStaleVouchers } from "@/lib/voucher";
 import { StatCard } from "@/components/shared/stat-card";
 
 export default async function AdminDashboardPage() {
+  await expireStaleVouchers();
+
   const [totalUsers, activeUsers, totalDeposits, vouchersIssued] = await Promise.all([
     prisma.user.count({ where: { role: "USER" } }),
     prisma.user.count({ where: { role: "USER", status: "ACTIVE" } }),

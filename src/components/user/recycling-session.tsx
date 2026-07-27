@@ -15,15 +15,16 @@ type Phase =
   | { name: "error"; message: string };
 
 function useCountdown(expiresAt: Date | null): number {
-  const [remaining, setRemaining] = useState(() =>
-    expiresAt ? Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) : 0
-  );
+  const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-    if (!expiresAt) return;
-    const tick = setInterval(() => {
-      setRemaining(Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)));
-    }, 1000);
+    if (!expiresAt) {
+      setRemaining(0);
+      return;
+    }
+    const update = () => setRemaining(Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)));
+    update();
+    const tick = setInterval(update, 1000);
     return () => clearInterval(tick);
   }, [expiresAt]);
 
@@ -101,6 +102,11 @@ export function RecyclingSession() {
   const remaining = useCountdown(expiresAt);
   useEffect(() => {
     if (phase.name !== "active" || remaining !== 0) return;
+    // Guard against a stale `remaining` from the moment this phase became
+    // active (useCountdown only settles its first real value inside its own
+    // effect, one render after the transition) — recheck the real deadline
+    // before treating this as a genuine countdown-hit-zero.
+    if (phase.expiresAt.getTime() - Date.now() > 0) return;
     const { sessionId } = phase;
     fetch(`/api/kiosk/session?id=${sessionId}`)
       .then((r) => r.json())

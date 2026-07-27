@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { expireStaleVouchers } from "@/lib/voucher";
 import { HeroStat } from "@/components/shared/hero-stat";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -27,6 +28,8 @@ export default async function WalletPage() {
   const session = await auth();
   const userId = session!.user.id;
 
+  await expireStaleVouchers();
+
   const [user, transactions, voucherRules, vouchers] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     prisma.pointsTransaction.findMany({
@@ -48,9 +51,16 @@ export default async function WalletPage() {
   const earned = transactions
     .filter((t) => t.type === "EARN")
     .reduce((sum, t) => sum + t.amount, 0);
-  const spent = transactions
-    .filter((t) => t.type === "SPEND")
+  // ADJUSTMENT transactions are refunds for spends whose voucher issuance
+  // failed (see refundPoints in src/lib/points.ts) — net them out so a
+  // failed-then-refunded redemption doesn't look like points were spent.
+  const refunded = transactions
+    .filter((t) => t.type === "ADJUSTMENT")
     .reduce((sum, t) => sum + t.amount, 0);
+  const spent =
+    transactions
+      .filter((t) => t.type === "SPEND")
+      .reduce((sum, t) => sum + t.amount, 0) - refunded;
 
   return (
     <div className="space-y-8">

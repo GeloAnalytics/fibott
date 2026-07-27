@@ -40,8 +40,11 @@ export function RedeemSection({
       toast.error(
         data.error === "INSUFFICIENT_POINTS"
           ? "You don't have enough points for this voucher yet."
-          : "Something went wrong. Please try again."
+          : data.error === "VOUCHER_ISSUANCE_FAILED"
+            ? "Couldn't issue your WiFi voucher right now — your points were refunded. Please try again shortly."
+            : "Something went wrong. Please try again."
       );
+      router.refresh();
       return;
     }
 

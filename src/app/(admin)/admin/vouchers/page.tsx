@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { expireStaleVouchers } from "@/lib/voucher";
 import { EmptyState } from "@/components/shared/empty-state";
 import { RowCountNotice } from "@/components/shared/row-count-notice";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,8 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = 
 };
 
 export default async function AdminVouchersPage() {
+  await expireStaleVouchers();
+
   const [vouchers, total] = await Promise.all([
     prisma.voucher.findMany({
       orderBy: { createdAt: "desc" },
