@@ -41,6 +41,13 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
 
 ### Production (Vercel)
 
+`getMikrotikClient()` picks between two connectivity options based on env vars — no code
+differs between them, only configuration. See "Bridge service" and "Direct exposure" below
+for the full setup of each; this deployment uses direct exposure (no domain was available
+for a stable tunnel hostname).
+
+**Option A — Bridge** (`BridgeClient`, router never touches the internet):
+
 ```
                 Internet
                     │
@@ -66,7 +73,30 @@ Set `BRIDGE_URL=""` — the client calls MikroTik directly.
               192.168.88.1
 ```
 
-The router is never exposed directly to the internet. Set `BRIDGE_URL` to the permanent ngrok domain.
+Set `BRIDGE_URL` to the permanent ngrok domain.
+
+**Option B — Direct exposure** (`MikrotikClient`, router is reachable from the internet on
+one narrow, firewalled path):
+
+```
+                Internet
+                    │
+                    ▼
+            Next.js (Vercel)
+                    │
+              POST /api/vouchers/redeem
+                    │
+              getMikrotikClient()
+                    │
+              MikrotikClient (no bridge/tunnel)
+                    │
+                    ▼
+             MikroTik REST API
+        <router>.sn.mynetname.net
+```
+
+Leave `BRIDGE_URL`/`BRIDGE_SECRET` unset — their presence makes `getMikrotikClient()`
+prefer the bridge — and set `MIKROTIK_HOST` to the router's DDNS hostname instead.
 
 ---
 
@@ -84,7 +114,7 @@ The router is never exposed directly to the internet. Set `BRIDGE_URL` to the pe
 | `MIKROTIK_PASSWORD` | _(router password)_ |
 | `MIKROTIK_HOTSPOT_PROFILE` | `1hour` |
 
-### Production (Vercel)
+### Production (Vercel) — Option A: Bridge
 
 | Variable | Value |
 |---|---|
@@ -93,11 +123,27 @@ The router is never exposed directly to the internet. Set `BRIDGE_URL` to the pe
 
 All other `MIKROTIK_*` vars are only needed locally; the bridge holds them and they never leave the LAN.
 
+### Production (Vercel) — Option B: Direct exposure (in use for this deployment)
+
+| Variable | Value |
+|---|---|
+| `MIKROTIK_HOST` | Router's IP Cloud DDNS hostname, e.g. `abcd1234.sn.mynetname.net` (from `/ip cloud print`) — not an IP |
+| `MIKROTIK_USER` / `MIKROTIK_PASSWORD` | `admin` for now — the scoped `fibott-api` account has an unresolved REST permission issue; accepted risk for this deployment rather than a launch blocker, see `docs/STATUS.md` |
+| `MIKROTIK_HOTSPOT_PROFILE` | `1hour` |
+| `MIKROTIK_PROTOCOL` | `https` |
+| `MIKROTIK_PORT` | `443` |
+| `MIKROTIK_INSECURE_TLS` | `true` (self-signed cert by default) |
+| `BRIDGE_URL` / `BRIDGE_SECRET` | Unset — their presence takes priority over direct mode |
+
+Set via `infra/push-vercel-env-direct.ps1` after running `infra/mikrotik-setup.rsc` §6 on the router.
+
 ---
 
-## Bridge service
+## Bridge service (production Option A)
 
-File: `infra/bridge/server.ts` — runs on the LAN machine alongside the MikroTik router.
+File: `infra/bridge/server.ts` — runs on the LAN machine alongside the MikroTik router. This
+deployment currently uses direct exposure (Option B, below) instead, since no domain was
+available for a stable tunnel hostname — this section is kept as the fallback path.
 
 The bridge listens on `localhost:3001`, validates the `Authorization: Bearer <BRIDGE_SECRET>` header, creates the hotspot user via the local MikroTik REST API, and returns the credentials.
 
@@ -122,6 +168,59 @@ Open Task Scheduler → Create Basic Task:
 - Trigger: **At startup** (or At log on)
 - Action: Start a program — `powershell.exe`
 - Arguments: `-WindowStyle Hidden -File "C:\path\to\Fibott\infra\start-bridge.ps1"`
+
+---
+
+## Direct exposure (production Option B — in use for this deployment)
+
+No LAN machine, no tunnel — Vercel calls the router's REST API directly. Chosen over the
+bridge when there's no domain available for a stable tunnel hostname (a Cloudflare named
+tunnel needs a domain added as a Cloudflare zone; ngrok's free static domain doesn't).
+Trades away "router never touches the internet" for "one less moving part to keep running."
+`getMikrotikClient()` in `src/lib/mikrotik-client.ts` already supports this — it only uses
+the bridge when both `BRIDGE_URL` and `BRIDGE_SECRET` are set; otherwise it calls
+`MIKROTIK_HOST` directly. No code changes needed to switch modes, only env vars.
+
+```
+              POST /api/vouchers/redeem
+                    │
+              getMikrotikClient()
+                    │
+              MikrotikClient (direct — no bridge/tunnel)
+                    │
+                    ▼
+             MikroTik REST API
+        <router>.sn.mynetname.net
+```
+
+### Setup (run once per physical router)
+
+1. Run section 6 of `infra/mikrotik-setup.rsc` on the router — enables a free DDNS
+   hostname via MikroTik's built-in IP Cloud (no domain purchase needed, survives IP
+   changes), switches the REST API to HTTPS-only, and firewalls the WAN interface down to
+   just that port (Winbox/SSH/API/FTP/Telnet stay blocked from the internet).
+2. Run `infra/push-vercel-env-direct.ps1` with the DDNS hostname from `/ip cloud print` and
+   the router's `admin` password. `fibott-api` (a scoped account) has a known unresolved REST
+   permission issue (see `docs/STATUS.md`) — using `admin` instead is an accepted risk for
+   this deployment, not a launch blocker; swap to `fibott-api` later once that's fixed, no
+   other change needed. This step also removes any leftover `BRIDGE_URL`/`BRIDGE_SECRET`
+   from Vercel, since their presence takes priority over direct mode.
+3. Redeploy: `vercel --prod`
+
+### If the router changes before deployment
+
+IP Cloud hostnames are tied to the router's serial number, so a different physical unit
+gets a different hostname. Re-run step 1 on whichever router is actually in use, then
+step 2 with its new `dns-name` — no code changes, just swapping one env var.
+
+### One conditional step: check for double NAT
+
+Section 6 of `mikrotik-setup.rsc` only firewalls *this* router — if it sits behind another
+router/modem that does the actual internet-facing NAT, that other device also needs a
+port-forward (WAN 443 → this router's LAN IP, port 443) configured in its own admin panel.
+Check once the real router is in place: compare the IP on its WAN interface
+(`/ip address print`) against `https://whatismyip.com` from a device on its LAN. Same IP —
+nothing more to do. Different IP — add the port-forward on the upstream device.
 
 ---
 
@@ -252,7 +351,8 @@ Everything else stays blocked until a valid voucher is used.
 |---|---|---|
 | Servo signal | **13** | Baseline pin, not a strapping pin |
 | Status LED | 33 | Onboard red, active-LOW |
-| Optional sensor | 14 or 15 | Only if a presence sensor is added later |
+| Buzzer signal | 14 | Only if a buzzer is wired — see `firmware/esp32-cam-buzzer/` |
+| Optional sensor | 15 | Only if a presence sensor is added later |
 
 Camera data lines (do not use): 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34, 35, 36, 39.
 
@@ -273,6 +373,11 @@ Do not power the servo from the ESP32-CAM board's own rail — camera WiFi TX sp
 
 Sketch: `firmware/esp32-cam/esp32-cam.ino`
 
+Variant: `firmware/esp32-cam-buzzer/esp32-cam-buzzer.ino` — identical state machine and
+network protocol, for kiosks that also have an active buzzer (GPIO14, active-HIGH) wired
+alongside the servo. Adds audible feedback: a short beep on boot/READY, one long beep on
+ACCEPT (while the gate opens), three short beeps on REJECT, one long beep on error.
+
 ### Configure (`firmware/esp32-cam/config.h`)
 
 | Setting | Value |
@@ -283,6 +388,7 @@ Sketch: `firmware/esp32-cam/esp32-cam.ino`
 | `DEVICE_API_KEY` | Plaintext key from seed output |
 | `PIN_SERVO` | `13` |
 | `SERVO_CLOSED_US` / `SERVO_OPEN_US` | Calibrate after assembly |
+| `PIN_BUZZER` | `14` (buzzer variant only) |
 | `POLL_INTERVAL_MS` | `2000` |
 | `GATE_OPEN_MS` | `3000` |
 | `RETRY_DELAY_MS` | `2000` |

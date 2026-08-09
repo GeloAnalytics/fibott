@@ -1,6 +1,6 @@
 # Fibott — Operator's Guide
 
-*Last updated: 2026-07-27*
+*Last updated: 2026-08-09*
 
 This is the plain-language guide for whoever runs Fibott day to day — not the engineering reference. For architecture, environment variables, and hardware wiring, see [SYSTEM.md](SYSTEM.md) and [STATUS.md](STATUS.md).
 
@@ -20,7 +20,12 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 2. **Set up a verified sending domain in Resend, or password reset will silently fail.** Right now `EMAIL_FROM` is `onboarding@resend.dev` — Resend's sandbox address, which only delivers to the Resend account owner's own inbox. Registration doesn't need email anymore (it auto-verifies), but **"Forgot password" still sends a real email**, and that email will never arrive for a real user until a custom domain is verified in Resend. The app will tell the user "check your email" either way — it has no way to know delivery failed. Until this is fixed, there is no way for a user who forgets their password to get back in except an admin resetting it manually in the database.
 
-3. **Get the bridge running before going live**, or every voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted app (once deployed) cannot reach directly. The bridge service + ngrok tunnel solve this — the tunnel's static domain (`cushy-tapeless-dividable.ngrok-free.app`) is already reserved, so just keep the bridge PC running via `infra/start-bridge.ps1` (there are instructions in that file for making it auto-start on boot). If you're still testing on the same local network as the router, this isn't needed yet — but it is required the moment the app is deployed anywhere else.
+3. **Get the router reachable from the internet before going live**, or every voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted app (once deployed) cannot reach directly. There are two ways to fix this — this deployment uses **direct exposure**:
+
+   - **Direct exposure (the path set up for this deployment)** — the router itself is made reachable from the internet, over HTTPS only, with everything else (Winbox, SSH, etc.) firewalled off. No extra machine to keep running. Setup is `infra/mikrotik-setup.rsc` §6 (run once, on the router) + `infra/push-vercel-env-direct.ps1` (run once, pushes env vars to Vercel). Chosen because no domain was available for a stable tunnel URL. One thing to check once the real router is in place: whether it sits directly on the internet or behind another router/modem — `docs/SYSTEM.md` → "Direct exposure" has the one-minute check and what to do for each case.
+   - **Bridge + tunnel (fallback, already configured, not currently in use)** — a small always-on service (`infra/bridge/`) runs on a machine on the router's LAN and relays requests through a tunnel (ngrok's static domain, `cushy-tapeless-dividable.ngrok-free.app`, is already reserved). Start it with `infra/start-bridge.ps1` (instructions in that file for auto-start on boot). Switch back to this if direct exposure runs into a blocker on-site.
+
+   If you're still testing on the same local network as the router, neither is needed yet — but one of them is required the moment the app is deployed anywhere else.
 
 4. **Save the device API keys.** `npx prisma db seed` prints each device's API key exactly once. If you lose it, you have to regenerate it and reflash the kiosk's firmware. Store it somewhere durable (password manager, not a sticky note).
 
@@ -32,7 +37,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 ## 3. Daily / weekly operation
 
-**Keep the bridge PC on.** If it (or its internet connection, or the ngrok tunnel) goes down, recycling still works — points still get awarded — but **voucher redemption will fail** for everyone until it's back up. This is the single most common way the system will look "broken" day to day.
+**Keep the router's connectivity path up.** With direct exposure (the setup in use), that means the router itself needs to stay online and reachable — if its internet connection drops, or whatever ISP router/modem sits in front of it loses its port-forward, recycling still works and points still get awarded, but **voucher redemption will fail** for everyone until it's reachable again. (If this deployment ever switches to the bridge fallback instead, the same applies to the bridge PC + tunnel.) This is the single most common way the system will look "broken" day to day.
 
 **Check these admin pages regularly:**
 
@@ -40,7 +45,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 |---|---|
 | Admin → Dashboard | Rough totals — user count, vouchers issued, items recycled |
 | Admin → Deposit History | A sudden run of `REJECTED` items — may mean the camera angle shifted or the classifier is struggling with a new item type |
-| Admin → Voucher Management | Vouchers stuck as `FAILED` — usually means the bridge or router was unreachable at that moment |
+| Admin → Voucher Management | Vouchers stuck as `FAILED` — usually means the router was unreachable at that moment (or the bridge, if using that fallback) |
 | Admin → Audit Logs | Who changed reward/voucher settings, and when |
 
 **Adjust point values and voucher pricing** under Admin → Rewards Management — no code changes needed. Changes there take effect immediately for the next deposit/redemption.
@@ -64,7 +69,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Voucher redemption fails / "couldn't issue voucher" | Bridge PC off, ngrok tunnel dropped, or the router itself is unreachable | Check the bridge PC is on and connected; check `infra/start-bridge.ps1` is running; points are automatically refunded on failure, so the user hasn't lost anything |
+| Voucher redemption fails / "couldn't issue voucher" | Router unreachable — its internet connection is down, its DDNS hostname isn't resolving, or (if behind another router/modem) that device's port-forward dropped. If using the bridge fallback instead: bridge PC off or tunnel dropped | Check the router is online; from a browser, confirm its DDNS hostname (from `/ip cloud print`) resolves and responds. If on the bridge fallback, check the bridge PC is on and `infra/start-bridge.ps1` is running. Points are automatically refunded on failure either way, so the user hasn't lost anything |
 | A user says a redemption failed but their "points spent" total looks off | This was a real bug, fixed 2026-07-27 — refunded attempts were inflating the spent total even though the balance was correct. If you still see this after that date, something regressed — flag it | — |
 | "Start Recycling" flashes to "Session expired" immediately | This was a real bug, fixed 2026-07-27 — a timing issue in the countdown made the app declare the session expired the instant it started, even though the kiosk was still waiting. Should not recur | If it does, capture a screenshot and check the server logs around that timestamp |
 | A user never received their "reset password" email | Resend sandbox domain limitation — see §2, item 2 | Verify a sending domain in Resend, or reset the user's password directly |

@@ -6,7 +6,7 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 
 - `src/` - Next.js app, API routes, auth, business logic, Prisma client, and device APIs
 - `prisma/` - Prisma schema, migrations, seed scripts
-- `firmware/` - ESP32-CAM firmware plus a legacy controller-era sketch kept for migration support
+- `firmware/` - ESP32-CAM firmware (base servo-only build, plus a servo+buzzer variant) and a legacy controller-era sketch kept for migration support
 - `hardware/` - wiring notes, BOM, and provisioning guidance for the mobile-first baseline
 - `docs/` - system design, connectivity, status, ML classifier notes, and the operator's guide
 - `scripts/ml/` - training and dataset preparation pipeline for the classifier
@@ -23,13 +23,13 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 ## Current status (~90–95% complete)
 
 - Full application stack working: auth, deposits, wallet, admin portal, voucher redemption. Leaderboard and Reports are still placeholder "coming soon" pages, not implemented
-- ESP32-CAM session-polling workflow and firmware complete
+- ESP32-CAM session-polling workflow and firmware complete, including a servo+buzzer variant for kiosks with audible feedback
 - MikroTik RouterOS REST integration verified (`npm run test:mikrotik` → `✓ Created hotspot user`)
 - Hotspot and Walled Garden configured — `fibott.vercel.app` and `accounts.google.com` accessible before WiFi auth
-- Bridge architecture in place: direct MikroTik for local dev, bridge + ngrok Tunnel for production
+- MikroTik reachability: `getMikrotikClient()` picks direct-vs-bridge automatically from env vars — direct MikroTik for local dev; in production, either the bridge (`infra/bridge/` + ngrok tunnel) or direct internet exposure (`infra/mikrotik-setup.rsc` §6 + `infra/push-vercel-env-direct.ps1`) work, pick one per deployment. See `docs/SYSTEM.md` → "Bridge service" vs "Direct exposure"
 - ML training pipeline complete; accuracy is low (~10%) due to outdoor TACO dataset — retrain with real kiosk captures (see `docs/ml.md`)
 - QA pass completed 2026-07-27: fixed a recycling-session frontend/backend desync, stale voucher status display, a points-spent double-count, and a points-balance race condition — see `docs/CLIENT-GUIDE.md` §6 for the list
-- See `docs/STATUS.md` for the remaining action plan (permanent tunnel, Vercel env vars, end-to-end test)
+- See `docs/STATUS.md` for the remaining action plan (production connectivity setup, Vercel env vars, end-to-end test)
 
 ## Getting started
 
@@ -77,12 +77,24 @@ Optional — local development (direct MikroTik):
 - `MIKROTIK_INSECURE_TLS`
 - `FIBOTT_ML_HEAD_PATH`
 
-Optional — production (bridge via ngrok Tunnel):
+Production needs one of two setups, since the hosted app can't reach a router on your LAN (`192.168.88.1`) directly. Pick one per deployment — `getMikrotikClient()` in `src/lib/mikrotik-client.ts` uses the bridge whenever both `BRIDGE_URL` and `BRIDGE_SECRET` are set, and falls back to calling `MIKROTIK_HOST` directly otherwise.
 
-- `BRIDGE_URL` — set to the permanent ngrok static domain (e.g. `https://cushy-tapeless-dividable.ngrok-free.app`, started via `infra/start-bridge.ps1`). When set, all MikroTik calls go through the bridge service instead of hitting the router directly. Required once the app is deployed anywhere other than the router's own LAN — voucher redemption fails without it.
+**Option A — Bridge via tunnel** (`infra/push-vercel-env.ps1`):
+
+- `BRIDGE_URL` — permanent tunnel domain pointing at the bridge service (e.g. ngrok's static domain, started via `infra/start-bridge.ps1`).
 - `BRIDGE_SECRET` — shared bearer secret between Vercel and the bridge service.
 
-Leave `BRIDGE_URL` empty (or unset) for local development.
+Requires a machine on the router's LAN to stay running as the bridge host.
+
+**Option B — Direct exposure** (`infra/push-vercel-env-direct.ps1`, no bridge machine, no domain needed):
+
+- `MIKROTIK_HOST` — the router's own DDNS hostname from MikroTik's built-in IP Cloud (`/ip cloud print` after running `infra/mikrotik-setup.rsc` §6), not an IP — survives the router's public IP changing.
+- `MIKROTIK_USER` / `MIKROTIK_PASSWORD` — `admin` for now (the scoped `fibott-api` account has an unresolved REST permission issue, see `docs/STATUS.md` — accepted risk for this deployment, not a blocker).
+- `MIKROTIK_PROTOCOL=https`, `MIKROTIK_PORT=443`, `MIKROTIK_INSECURE_TLS=true` (self-signed cert by default).
+
+Requires `infra/mikrotik-setup.rsc` §6 to have been run on the router first (DDNS + HTTPS-only + WAN firewall lockdown to just that one port). See `docs/SYSTEM.md` → "Direct exposure" for the full setup and its one router-topology caveat.
+
+Leave `BRIDGE_URL`/`BRIDGE_SECRET` empty (or unset) for local development and for Option B.
 
 5. Run the app
 
@@ -94,7 +106,8 @@ Open `http://localhost:3000`.
 
 ## Firmware and device provisioning
 
-- `firmware/esp32-cam/` - active ESP32-CAM sketch and camera-side config
+- `firmware/esp32-cam/` - active ESP32-CAM sketch (servo only) and camera-side config
+- `firmware/esp32-cam-buzzer/` - same sketch, for kiosks that also have a buzzer wired for audible accept/reject/error feedback (GPIO14)
 - `firmware/kiosk-controller/` - legacy controller sketch kept for migration support
 - The active kiosk board requires a `Device` row and plaintext API key generated by `generateDeviceApiKey()` in `src/lib/device-auth.ts`
 

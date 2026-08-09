@@ -1,6 +1,6 @@
 # Fibott — Status & Next Steps
 
-**Last updated:** 2026-07-27 (QA pass — see §"QA pass" below)
+**Last updated:** 2026-08-09 (firmware buzzer variant + production connectivity decision — see §"2026-08-09 session" below)
 
 Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-GUIDE.md](CLIENT-GUIDE.md)
 
@@ -20,22 +20,52 @@ Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-
 | Frontend — wallet + redeem UI | ✅ Done | Redeem button, voucher code displayed immediately, history table. Fixed 2026-07-27: "Points spent" double-counted failed-then-refunded redemptions; vouchers now expire on screen via `expireStaleVouchers()` instead of showing `ISSUED` forever |
 | Frontend — admin pages | ✅ Done | Users, deposits, vouchers, rewards, audit log, reports |
 | ESP32-CAM firmware | ✅ Done | FSM: IDLE → READY → PROCESSING → SUCCESS/ERROR; polls `/api/kiosk/session` |
-| Bridge service | ✅ Done | `infra/bridge/server.ts` — `npm run bridge:start` |
-| Tunnel — ngrok setup | ✅ Done | Static domain `cushy-tapeless-dividable.ngrok-free.app` + `infra/start-bridge.ps1` |
+| ESP32-CAM firmware — servo+buzzer variant | ✅ Done | `firmware/esp32-cam-buzzer/` — same FSM, adds audible accept/reject/error feedback on GPIO14 |
+| Bridge service (production option A) | ✅ Done | `infra/bridge/server.ts` — `npm run bridge:start`. Still valid; requires a tunnel + always-on LAN machine |
+| Direct exposure (production option B) | 🟡 Scripted, unverified on hardware | `infra/mikrotik-setup.rsc` §6 + `infra/push-vercel-env-direct.ps1` — chosen for this deployment (no domain available for a stable tunnel hostname). Not yet run against the actual presentation router |
+| Tunnel — ngrok setup | ✅ Done (fallback option) | Static domain `cushy-tapeless-dividable.ngrok-free.app` + `infra/start-bridge.ps1`. Kept working in case direct exposure hits a blocker on-site |
 | MikroTik hotspot | ✅ Done | Walled Garden: `fibott.vercel.app` + `accounts.google.com` |
 | RouterOS REST API (www service) | ✅ Done | Verified working — `npm run test:mikrotik` passes |
 | TypeScript build | ✅ Clean | `tsc --noEmit` passes with no errors |
 | ML dataset import | ✅ Done | 96 images (65 bottles, 31 cans) from TACO |
 | ML training pipeline | ✅ Done | `npm run ml:train` writes `models/bottle-can-head/weights.json` |
 | ML classifier accuracy | 🟡 Low | ~10% val accuracy — retrain after collecting real kiosk captures |
-| MikroTik `fibott-api` user | ❌ Needed | REST permission issues unresolved; still using `admin` |
+| MikroTik `fibott-api` user | 🟡 Deferred, accepted risk | REST permission issues unresolved; `admin` used instead, including for direct exposure — a deliberate decision to ship rather than block launch on it (see 2026-08-09 session note below). Troubleshooting notes for fixing it later are in `infra/mikrotik-setup.rsc` step 2 |
 | MikroTik `1hour` profile | ❓ Verify | Confirm with `/ip/hotspot/user/profile/print` |
-| ngrok static domain | ✅ Done | Reserved: `cushy-tapeless-dividable.ngrok-free.app` (never changes) |
-| Vercel env vars (`BRIDGE_URL`, `BRIDGE_SECRET`) | ❓ Verify | Values are ready in `infra/push-vercel-env.ps1` / `.env.local` — confirm `vercel env add` was actually run against production |
+| ngrok static domain | ✅ Done | Reserved: `cushy-tapeless-dividable.ngrok-free.app` (never changes) — kept as the fallback path |
+| Vercel env vars — bridge option | ❓ Verify | Values are ready in `infra/push-vercel-env.ps1` / `.env.local` — confirm `vercel env add` was actually run against production if this is the option used |
+| Vercel env vars — direct exposure option | ❌ Needed | `infra/push-vercel-env-direct.ps1` is ready but not yet run — needs the real router's IP Cloud DDNS hostname first (only obtainable once that router is set up, see "Remaining tasks" §C) |
 | End-to-end local validation | ✅ Done (2026-07-27) | Browser-verified: login → Start Recycling → simulated deposit → points awarded → wallet redeem → real MikroTik voucher issued (this machine has direct router access) |
-| End-to-end **production** validation | ❌ Needed | Same flow through the deployed Vercel app + bridge/tunnel, plus real hotspot login with an issued voucher code |
+| End-to-end **production** validation | ❌ Needed | Same flow through the deployed Vercel app + whichever connectivity option is live, plus real hotspot login with an issued voucher code |
 | Password reset email delivery | ❌ Needed | `EMAIL_FROM` is still Resend's sandbox address — reset emails silently fail to reach anyone but the Resend account owner until a custom domain is verified. Registration no longer needs email (auto-verifies), but this path still does |
 | MG90S servo condition | ❓ Unverified | Physical check before assembly |
+
+---
+
+## 2026-08-09 session — firmware variant + production connectivity decision
+
+Two additions, not bug fixes:
+
+1. **Servo+buzzer firmware variant** (`firmware/esp32-cam-buzzer/`) — same FSM and network
+   protocol as the base sketch, adds audible accept/reject/error feedback for kiosks that
+   have a buzzer wired alongside the gate servo. `docs/SYSTEM.md` updated (GPIO table,
+   Firmware section) to document both variants side by side.
+2. **Direct exposure chosen as this deployment's production connectivity path**, as an
+   alternative to the bridge+ngrok setup — no domain is available for a stable Cloudflare
+   Tunnel hostname (the alternative that was considered), and the presentation's actual
+   router hardware isn't finalized yet so router-specific setup couldn't be verified this
+   session. `infra/mikrotik-setup.rsc` §6 and `infra/push-vercel-env-direct.ps1` are ready;
+   see `docs/SYSTEM.md` → "Direct exposure" for the full setup and its one router-topology
+   caveat (single vs. double NAT), and "Remaining tasks" §C below for what's left to run
+   once the real router is in place. The bridge+ngrok setup is left in place as a fallback,
+   not removed.
+
+Also decided, not fixed: the unresolved `fibott-api` REST permission issue
+(`MikroTik fibott-api user` row above) — direct exposure means whichever account is used
+becomes reachable from the whole internet, which raises the stakes on this compared to
+local dev. Decision: ship with `admin` anyway rather than block launch on it, same call as
+keeping the router's current password as-is. `infra/mikrotik-setup.rsc` step 2 has
+diagnostic commands to fix it properly later; not required before deploying.
 
 ---
 
@@ -74,20 +104,46 @@ If `1hour` is not listed:
 /ip/hotspot/user/profile/add name=1hour session-timeout=1h shared-users=1
 ```
 
-### B. Resolve `fibott-api` REST permissions (10 min)
+### B. Resolve `fibott-api` REST permissions (10 min, deferred — not required to deploy)
 
-The dedicated API account hits permission errors with RouterOS REST. Until resolved, `admin` is used.
+The dedicated API account hits permission errors with RouterOS REST. `admin` is used instead — accepted for now, including for direct exposure (§C), as a deliberate ship-over-block decision (see 2026-08-09 session note above). Worth fixing when there's time, since `admin` becoming internet-reachable is a real if accepted risk.
 
 ```
 /user/print
-/user/group/print
+/user/group/print detail where name=write
+/user/group/print detail where name=full
 ```
 
-The account needs at minimum `read` + `write` on `/rest/ip/hotspot/user`.
+Compare the `policy=` list between `write` and `full`; the account needs at minimum `read` + `write` + whatever policy RouterOS actually requires for REST specifically (commonly `api`/`rest-api` — confirm by testing, don't assume). Full diagnostic sequence and the fix command are in `infra/mikrotik-setup.rsc` step 2. Re-test with the step 5 curl command after each change until `fibott-api` succeeds.
 
-### C. ngrok permanent tunnel — already set up
+### C. Direct exposure setup — chosen path for this deployment (~20 min, on the actual presentation router)
 
-Run from the LAN machine that hosts the bridge service (already done on this machine — reproduce here only if moving the bridge to a new machine):
+No domain was available for a stable tunnel hostname, so this deployment calls MikroTik directly instead of through the bridge. Can't be run until the real presentation router is in place — do this once that's settled:
+
+```bash
+# 1. Run infra/mikrotik-setup.rsc §6 on the router (Winbox/SSH/WebFig terminal):
+#    - enables MikroTik's free built-in DDNS (IP Cloud) — no domain purchase needed
+#    - switches REST API to HTTPS-only
+#    - firewalls the WAN interface down to just that one port
+#    Uses admin (§B deferred, not blocking) — see step 2's note in the .rsc file.
+
+# 2. Check for double NAT (1 min): compare the IP on the router's WAN interface
+#    (`/ip address print`) against https://whatismyip.com from a device on its LAN.
+#    Different IPs → also port-forward WAN 443 → this router's LAN IP on whatever
+#    device sits in front of it (that device's own admin panel, not MikroTik).
+
+# 3. Push env vars to Vercel:
+npm i -g vercel
+vercel login
+.\infra\push-vercel-env-direct.ps1   # fill in the DDNS hostname from `/ip cloud print` first
+
+# Redeploy to pick up new vars
+vercel --prod
+```
+
+### D. Bridge + ngrok — fallback path, already set up
+
+Kept working in case direct exposure (§C) hits a blocker on-site. Run from the LAN machine that hosts the bridge service (already done on this machine — reproduce here only if moving the bridge to a new machine, or if switching this deployment back to the bridge):
 
 ```bash
 # 1. Install ngrok and sign up at https://ngrok.com (free, static domain included)
@@ -102,16 +158,7 @@ ngrok config add-authtoken <YOUR-AUTHTOKEN>
 # 5. BRIDGE_URL / BRIDGE_SECRET are already filled in infra/push-vercel-env.ps1 — run it, then `vercel --prod`
 ```
 
-### D. Push production env vars to Vercel (5 min)
-
-```bash
-npm i -g vercel
-vercel login
-.\infra\push-vercel-env.ps1
-
-# Redeploy to pick up new vars
-vercel --prod
-```
+If switching between §C and §D, remember `getMikrotikClient()` prefers the bridge whenever `BRIDGE_URL`/`BRIDGE_SECRET` are both set on Vercel — clear them out when using direct exposure, and set `MIKROTIK_*` when using the bridge doesn't matter since the bridge holds those itself.
 
 ### E. End-to-end production test (10 min)
 
@@ -137,10 +184,10 @@ npm run ml:train
 
 ## Deferred
 
-- **`fibott-api` REST permissions** — dedicated service account exists but hits RouterOS errors; `admin` is the active workaround.
+- **`fibott-api` REST permissions** — dedicated service account exists but hits RouterOS errors; `admin` is the active workaround, including under direct exposure — accepted risk, not blocking this deployment. See "Remaining tasks" §B.
 - **Legacy routes** — `POST /api/deposit-sessions`, `GET /api/device/session`, `/api/device/sessions/claim`, `/api/device/sessions/activate` retained for migration; retire when no longer needed.
 - **Additional voucher profiles** — seed `3hour`, `1day` `VoucherRule` rows and create matching MikroTik profiles when ready.
-- **Servo calibration** — set `SERVO_CLOSED_US` / `SERVO_OPEN_US` in `firmware/esp32-cam/config.h` after physical assembly.
+- **Servo calibration** — set `SERVO_CLOSED_US` / `SERVO_OPEN_US` in `firmware/esp32-cam/config.h` (or `firmware/esp32-cam-buzzer/config.h` if using that variant) after physical assembly.
 - **Multi-kiosk** — add `kioskId` to sessions when expanding beyond one kiosk. No major redesign required.
 - **Resend sending domain** — `EMAIL_FROM` still points at Resend's sandbox address; password-reset email delivery is broken for anyone but the Resend account owner until a custom domain is verified.
 - **Voucher usage tracking** — `Voucher.REDEEMED` is a schema value nothing ever sets; there's no signal from MikroTik back to the app when a code is actually used at the hotspot.
