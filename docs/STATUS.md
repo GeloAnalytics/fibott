@@ -127,10 +127,16 @@ No domain was available for a stable tunnel hostname, so this deployment calls M
 #    - firewalls the WAN interface down to just that one port
 #    Uses admin (§B deferred, not blocking) — see step 2's note in the .rsc file.
 
-# 2. Check for double NAT (1 min): compare the IP on the router's WAN interface
-#    (`/ip address print`) against https://whatismyip.com from a device on its LAN.
-#    Different IPs → also port-forward WAN 443 → this router's LAN IP on whatever
-#    device sits in front of it (that device's own admin panel, not MikroTik).
+# 2. Check for double NAT / CGNAT (1 min, redo on every new internet connection):
+#    compare the IP on the router's WAN interface (`/ip address print`) against
+#    https://whatismyip.com from a device on its LAN.
+#    - Same IP → nothing more to do.
+#    - Different IP, router/modem you can log into → port-forward WAN 443 to
+#      this router's LAN IP there.
+#    - Different IP, no device to log into (or WAN IP in 100.64.0.0/10) →
+#      carrier-grade NAT (common on mobile data / pocket WiFi / prepaid plans).
+#      Unfixable on the router side — switch to §D (bridge + tunnel) for this
+#      connection instead.
 
 # 3. Push env vars to Vercel:
 npm i -g vercel

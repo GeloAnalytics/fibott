@@ -213,14 +213,28 @@ IP Cloud hostnames are tied to the router's serial number, so a different physic
 gets a different hostname. Re-run step 1 on whichever router is actually in use, then
 step 2 with its new `dns-name` — no code changes, just swapping one env var.
 
-### One conditional step: check for double NAT
+### One conditional step: check for double NAT (redo this on every new internet connection)
+
+The DDNS hostname and firewall rules survive a change of internet connection automatically —
+IP Cloud updates the DNS record itself whenever the WAN IP changes. What doesn't survive is
+whether the *new* connection gives this router a real public IP at all, so re-run this check
+every time the router moves to a different connection, not just once.
 
 Section 6 of `mikrotik-setup.rsc` only firewalls *this* router — if it sits behind another
 router/modem that does the actual internet-facing NAT, that other device also needs a
 port-forward (WAN 443 → this router's LAN IP, port 443) configured in its own admin panel.
-Check once the real router is in place: compare the IP on its WAN interface
-(`/ip address print`) against `https://whatismyip.com` from a device on its LAN. Same IP —
-nothing more to do. Different IP — add the port-forward on the upstream device.
+Check: compare the IP on the router's WAN interface (`/ip address print`) against
+`https://whatismyip.com` from a device on its LAN.
+
+- **Same IP** — nothing more to do, direct exposure works as-is.
+- **Different IP, and there's a router/modem you can log into** — add the port-forward there.
+- **Different IP, and the WAN IP falls in `100.64.0.0–100.127.255.255`, or there's no device
+  you can log into at all** — this is carrier-grade NAT (CGNAT), common on mobile data,
+  pocket WiFi, and some prepaid plans. There is no fix for this on the router side; no
+  firewall rule or port-forward makes it reachable, because the ISP itself controls the NAT
+  and doesn't expose it. **Switch to the bridge + tunnel fallback (`infra/start-bridge.ps1`)
+  for this connection instead** — it makes an outbound connection to the tunnel, so CGNAT
+  doesn't affect it.
 
 ---
 
