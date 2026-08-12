@@ -111,15 +111,41 @@ function requestJson(
       });
     });
 
+    const host = baseUrl.hostname;
+    const port = options.port as number;
+
     req.on("timeout", () => {
-      req.destroy(new Error("MikroTik request timed out (8 s) — is the www service enabled?"));
+      req.destroy(
+        new Error(
+          `MikroTik request to ${host}:${port} timed out after 8s with no response. Either this machine can't reach the router's network (not on its LAN/WiFi, and no tunnel/bridge configured), or the router is reachable but its REST API (www/www-ssl service) isn't responding on this port.`
+        )
+      );
     });
-    req.on("error", reject);
+    req.on("error", (error: NodeJS.ErrnoException) => {
+      reject(new Error(describeConnectionError(error, host, port)));
+    });
     if (payload) {
       req.write(payload);
     }
     req.end();
   });
+}
+
+function describeConnectionError(error: NodeJS.ErrnoException, host: string, port: number): string {
+  switch (error.code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return `Could not resolve host "${host}" — check MIKROTIK_HOST and DNS/DDNS setup.`;
+    case "ECONNREFUSED":
+      return `Connection refused by ${host}:${port} — the host is reachable but nothing is listening on that port (wrong MIKROTIK_PORT/PROTOCOL, or the www/www-ssl service is disabled on the router).`;
+    case "EHOSTUNREACH":
+    case "ENETUNREACH":
+      return `No route to ${host} — this machine isn't on the same network as the router (not connected to its LAN/WiFi, and no tunnel/bridge configured for remote access).`;
+    case "ECONNRESET":
+      return `Connection to ${host}:${port} was reset — the router closed the connection mid-request.`;
+    default:
+      return error.message;
+  }
 }
 
 function getErrorMessage(rawBody: string, fallback: string): string {
