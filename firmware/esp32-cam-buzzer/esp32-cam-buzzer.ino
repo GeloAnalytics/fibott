@@ -147,6 +147,34 @@ static bool cameraInit() {
   return true;
 }
 
+// ── Telemetry Logging ────────────────────────────────────────────────────────
+static void sendLog(const char* level, const char* tag, const char* message, const char* details = nullptr) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(BACKEND_TIMEOUT_S);
+  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) return;
+
+  JsonDocument doc;
+  doc["level"] = level;
+  doc["tag"] = tag;
+  doc["message"] = message;
+  if (details) doc["details"] = details;
+
+  String body;
+  serializeJson(doc, body);
+
+  client.printf("POST %s HTTP/1.1\r\n", PATH_LOGS);
+  client.printf("Host: %s\r\n", BACKEND_HOST);
+  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
+  client.printf("Content-Type: application/json\r\n");
+  client.printf("Content-Length: %u\r\n", (unsigned)body.length());
+  client.printf("Connection: close\r\n\r\n");
+  client.print(body);
+  client.flush();
+  client.stop();
+}
+
 // ── Session polling ───────────────────────────────────────────────────────────
 // Returns true and populates outSessionId if an active session is found.
 static bool pollSession(char *outSessionId, size_t maxLen) {
@@ -303,10 +331,12 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
   Serial.printf("\n[wifi] %s\n", WiFi.localIP().toString().c_str());
+  sendLog("INFO", "WIFI", "WiFi connected", WiFi.localIP().toString().c_str());
 
   ledOn(); delay(200); ledOff();
   beep(1, 80);  // boot complete
   Serial.println("[boot] ready — entering IDLE");
+  sendLog("INFO", "BOOT", "Fibott ESP32-CAM (Buzzer Variant) online and ready");
 }
 
 // ── Main loop (FSM) ───────────────────────────────────────────────────────────

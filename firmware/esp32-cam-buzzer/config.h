@@ -8,6 +8,7 @@
 #define BACKEND_HOST  "your-app.vercel.app"   // no https:// prefix
 #define BACKEND_PORT  443
 #define DEVICE_API_KEY "your-device-api-key-here"
+#define PATH_LOGS      "/api/device/logs"
 
 // ── Servo ─────────────────────────────────────────────────────────────────────
 // GPIO13 is safe (not a strapping pin). Do NOT use GPIO12 (MTDI strapping pin).

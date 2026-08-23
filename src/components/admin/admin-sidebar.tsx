@@ -29,6 +29,7 @@ export const adminNavGroups: { heading: string; links: NavLinkItem[] }[] = [
     heading: "Insights",
     links: [
       { href: "/admin/reports", label: "Reports" },
+      { href: "/admin/logs", label: "System & Hardware Logs" },
       { href: "/admin/audit-logs", label: "Audit Logs" },
       { href: "/admin/leaderboard", label: "Leaderboard" },
       { href: "/admin/notifications", label: "Notifications" },

@@ -172,6 +172,7 @@ model Device {
 
   deposits        Deposit[]
   depositSessions DepositSession[]
+  systemLogs      SystemLog[]
 
   @@index([type])
   @@index([status])
@@ -319,3 +320,34 @@ model Notification {
   @@index([userId])
   @@index([isRead])
 }
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum LogSource {
+  HARDWARE
+  SYSTEM
+}
+
+model SystemLog {
+  id        String    @id @default(cuid())
+  source    LogSource @default(HARDWARE)
+  level     LogLevel  @default(INFO)
+  tag       String
+  message   String
+  details   String?   @db.Text
+  deviceId  String?
+  createdAt DateTime  @default(now())
+
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([source])
+  @@index([level])
+  @@index([tag])
+  @@index([deviceId])
+  @@index([createdAt])
+}
+

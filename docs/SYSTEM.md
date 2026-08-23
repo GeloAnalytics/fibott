@@ -129,6 +129,9 @@ The Next.js backend calls the MikroTik RouterOS REST API endpoint (`/rest/ip/hot
 | `GET /api/kiosk/session` | ESP32-CAM | Poll for active session (device API key) |
 | `GET /api/kiosk/session` | Mobile App | Check own session status (user cookie, `?id=<sessionId>`) |
 | `POST /api/device/deposit-image` | ESP32-CAM | Upload captured frame → classify → award points → complete session |
+| `POST /api/device/logs` | ESP32-CAM / System | Post telemetry, hardware status, and error logs |
+| `GET /api/admin/logs` | Admin Portal | Query and filter system & hardware logs, metrics |
+| `DELETE /api/admin/logs` | Admin Portal | Purge old log entries |
 | `POST /api/device/scan` | ESP32-CAM (test) | Pre-classified result, no image upload |
 | `POST /api/vouchers/redeem` | Mobile App | Spend points → create MikroTik hotspot user → return voucher code |
 

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { spendPoints, refundPoints, InsufficientPointsError } from "@/lib/points";
 import { getMikrotikClient } from "@/lib/mikrotik-client";
+import { logSystemEvent } from "@/lib/logger";
 
 const schema = z.object({ voucherRuleId: z.string() });
 
@@ -73,6 +74,15 @@ export async function POST(req: Request) {
         expiresAt: result.expiresAt,
       },
     });
+
+    await logSystemEvent({
+      source: "SYSTEM",
+      level: "INFO",
+      tag: "MIKROTIK",
+      message: `Voucher issued successfully (${result.code})`,
+      details: { voucherId: voucher.id, userId, durationMinutes: voucherRule.durationMinutes },
+    });
+
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     return NextResponse.json({
       voucherId: voucher.id,
@@ -94,6 +104,14 @@ export async function POST(req: Request) {
       amount: voucherRule.pointsCost,
       voucherId,
     });
+  });
+
+  await logSystemEvent({
+    source: "SYSTEM",
+    level: "ERROR",
+    tag: "MIKROTIK",
+    message: `Voucher issuance failed for user ${userId}`,
+    details: { voucherId, error: result.errorMessage },
   });
 
   return NextResponse.json(

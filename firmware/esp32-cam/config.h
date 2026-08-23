@@ -8,6 +8,7 @@
 #define BACKEND_HOST  "fibott.vercel.app"
 #define BACKEND_PORT  443
 #define DEVICE_API_KEY "fibott_dev_7cd2f63b3fcaae7fa973ea58d8f94680df86c05f589bd189"
+#define PATH_LOGS      "/api/device/logs"
 
 // ── Servo ─────────────────────────────────────────────────────────────────────
 // GPIO13 is safe (not a strapping pin). Do NOT use GPIO12 (MTDI strapping pin).

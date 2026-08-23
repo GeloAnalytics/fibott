@@ -45,6 +45,11 @@ Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-
    - Resolved voucher issuance failures by supporting mock mode (`MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"`) for local development without physical router hardware.
    - Improved REST API error messages when communicating with a physical MikroTik unit.
 
+5. **Admin System & Hardware Logging Framework**:
+   - Added `SystemLog` model in Prisma and `POST /api/device/logs` ingestion route.
+   - Built Admin Portal page (`/admin/logs`) with 5-second realtime auto-refresh polling, level/source/tag filtering, search, and metric summary cards.
+   - Added `sendLog()` telemetry to ESP32-CAM firmware (`esp32-cam` and `esp32-cam-buzzer`), eliminating the need to rely on the Arduino Serial Monitor for hardware monitoring.
+
 ---
 
 ## Remaining tasks
