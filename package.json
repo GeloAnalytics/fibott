@@ -13,7 +13,6 @@
     "ml:train": "tsx scripts/ml/train.ts",
     "ml:setup": "tsx scripts/ml/setup.ts",
     "ml:collect": "tsx scripts/ml/collect-server.ts",
-    "bridge:start": "tsx infra/bridge/server.ts",
     "test:mikrotik": "tsx infra/test-mikrotik.ts",
     "db:seed": "prisma db seed"
   },

@@ -1,6 +1,6 @@
 # Fibott — Operator's Guide
 
-*Last updated: 2026-08-09*
+*Last updated: 2026-08-23*
 
 This is the plain-language guide for whoever runs Fibott day to day — not the engineering reference. For architecture, environment variables, and hardware wiring, see [SYSTEM.md](SYSTEM.md) and [STATUS.md](STATUS.md).
 
@@ -18,74 +18,47 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 1. **Change the default admin password.** The seed script creates `admin@fibott.local` / `Admin12345!` and that password is sitting in plain text in the project's source code. Log in and change it (Admin → Profile) before anyone else can find it.
 
-2. **Set up a verified sending domain in Resend, or password reset will silently fail.** Right now `EMAIL_FROM` is `onboarding@resend.dev` — Resend's sandbox address, which only delivers to the Resend account owner's own inbox. Registration doesn't need email anymore (it auto-verifies), but **"Forgot password" still sends a real email**, and that email will never arrive for a real user until a custom domain is verified in Resend. The app will tell the user "check your email" either way — it has no way to know delivery failed. Until this is fixed, there is no way for a user who forgets their password to get back in except an admin resetting it manually in the database.
+2. **Configure Open WiFi Network (No Password).** Ensure the MikroTik wireless security profile has `authentication-types=none` so users connecting to the "Fibott" SSID do not need a WiFi password. The network is protected and managed entirely by the captive portal voucher system.
 
-3. **Get the router reachable from the internet before going live**, or every voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted app (once deployed) cannot reach directly. There are two ways to fix this — this deployment uses **direct exposure**:
+3. **Verify Google Sign-In Walled Garden Rules.** Unauthenticated users connected to the hotspot must be allowed to complete Google OAuth. Verify that `infra/mikrotik-setup.rsc` Walled Garden rules (`*google.com`, `*googleapis.com`, `*gstatic.com`, `*googleusercontent.com`, `fibott.vercel.app`) have been executed on the router.
 
-   - **Direct exposure (the path set up for this deployment)** — the router itself is made reachable from the internet, over HTTPS only, with everything else (Winbox, SSH, etc.) firewalled off. No extra machine to keep running. Setup is `infra/mikrotik-setup.rsc` §6 (run once, on the router) + `infra/push-vercel-env-direct.ps1` (run once, pushes env vars to Vercel). Chosen because no domain was available for a stable tunnel URL. One thing to check **every time the router connects to a different internet connection**, not just once: whether it sits directly on the internet, behind another router/modem, or behind carrier-grade NAT (common on mobile data / pocket WiFi / prepaid plans) — the last one can't be fixed on the router side at all, and means falling back to bridge + tunnel for that connection. `docs/SYSTEM.md` → "Direct exposure" has the check and what to do for each case.
-   - **Bridge + tunnel (fallback, already configured, not currently in use)** — a small always-on service (`infra/bridge/`) runs on a machine on the router's LAN and relays requests through a tunnel (ngrok's static domain, `cushy-tapeless-dividable.ngrok-free.app`, is already reserved). Start it with `infra/start-bridge.ps1` (instructions in that file for auto-start on boot). Switch back to this if direct exposure runs into a blocker on-site.
+4. **Get the router REST API reachable from the internet**, or voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted Vercel app cannot reach directly unless exposed via DDNS and port 443 HTTPS. Run `infra/mikrotik-setup.rsc` on the router and set `MIKROTIK_HOST` in Vercel to the router's IP Cloud DDNS hostname.
 
-   If you're still testing on the same local network as the router, neither is needed yet — but one of them is required the moment the app is deployed anywhere else.
+5. **Set up a verified sending domain in Resend, or password reset will silently fail.** Right now `EMAIL_FROM` is `onboarding@resend.dev` — Resend's sandbox address, which only delivers to the Resend account owner's own inbox. Registration doesn't need email anymore (it auto-verifies), but **"Forgot password" still sends a real email**, and that email will never arrive for a real user until a custom domain is verified in Resend.
 
-4. **Save the device API keys.** `npx prisma db seed` prints each device's API key exactly once. If you lose it, you have to regenerate it and reflash the kiosk's firmware. Store it somewhere durable (password manager, not a sticky note).
-
-5. **Decide what to do with test accounts.** The database currently has several test/dev accounts (`testuser@fibott.local` and a handful of others created while building this). Remove them or leave them — just make that decision deliberately before go-live rather than by accident.
-
-6. **Confirm Google Sign-In is wanted.** `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are already configured, so "Continue with Google" is live. If that's not desired, it needs to be removed from the login/register pages.
+6. **Save the device API keys.** `npx prisma db seed` prints each device's API key exactly once. Store it somewhere durable.
 
 ---
 
 ## 3. Daily / weekly operation
 
-**Keep the router's connectivity path up.** With direct exposure (the setup in use), that means the router itself needs to stay online and reachable — if its internet connection drops, or whatever ISP router/modem sits in front of it loses its port-forward, recycling still works and points still get awarded, but **voucher redemption will fail** for everyone until it's reachable again. (If this deployment ever switches to the bridge fallback instead, the same applies to the bridge PC + tunnel.) This is the single most common way the system will look "broken" day to day.
+**Keep the router online.** If the MikroTik router loses power or its internet connection, recycling still works and points still get awarded, but **voucher redemption will fail** until it is reachable again. (If testing locally without a router, set `MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"` in `.env.local`).
 
 **Check these admin pages regularly:**
 
 | Page | What to look for |
 |---|---|
-| Admin → Dashboard | Rough totals — user count, vouchers issued, items recycled |
-| Admin → Deposit History | A sudden run of `REJECTED` items — may mean the camera angle shifted or the classifier is struggling with a new item type |
-| Admin → Voucher Management | Vouchers stuck as `FAILED` — usually means the router was unreachable at that moment (or the bridge, if using that fallback) |
+| Admin → Dashboard | Totals — user count, vouchers issued, items recycled |
+| Admin → Deposit History | A sudden run of `REJECTED` items — camera angle shifted or new item type |
+| Admin → Voucher Management | Vouchers stuck as `FAILED` — usually means the router was unreachable at that moment |
 | Admin → Audit Logs | Who changed reward/voucher settings, and when |
 
-**Adjust point values and voucher pricing** under Admin → Rewards Management — no code changes needed. Changes there take effect immediately for the next deposit/redemption.
+---
 
-**Review users** under Admin → User Directory (search by name or email). Suspend/edit actions aren't built yet — see §5.
+## 4. Known limitations
+
+- **A voucher's status reflects whether it was *issued*, not whether it was *used*.** The router doesn't report back to the app when someone actually logs into the hotspot with a code.
+- **The router's own hotspot user list is never cleaned up automatically.** Every voucher ever issued leaves an entry in MikroTik's hotspot user table. Plan on pruning old entries periodically via RouterOS terminal or Winbox.
+- **Only one recycling session, system-wide, at a time.** Matches having one physical kiosk chute.
 
 ---
 
-## 4. Known limitations — set expectations accordingly
-
-- **The camera's item recognition is a bootstrap model, not a trained one yet.** It currently reuses a general-purpose image classifier (MobileNet/ImageNet) with a keyword mapping — it was never trained on photos of your specific kiosk chute. Expect some misclassified or rejected items until it's retrained on real kiosk captures. There's already a pipeline for this (`npm run ml:train`) — it just needs a batch of real accepted/rejected photos from the field to run against.
-- **A voucher's status reflects whether it was *issued*, not whether it was *used*.** The router doesn't report back to the app when someone actually logs into the hotspot with a code. A voucher shows `ISSUED` until its time window passes (then `EXPIRED`), regardless of whether the user ever connected.
-- **The router's own hotspot user list is never cleaned up automatically.** Every voucher ever issued leaves a permanent entry in MikroTik's hotspot user table — the app doesn't delete them once they expire. Plan on pruning old entries there periodically (RouterOS terminal, or Winbox) so the list doesn't grow unbounded.
-- **No admin tools yet to suspend or edit a user** — that page is explicitly marked "coming soon" in the app itself.
-- **Reports and Leaderboard are placeholders** — not implemented yet, shown as "coming soon."
-- **Only one recycling session, system-wide, at a time.** This matches having one physical kiosk. If a second kiosk is ever added, the session logic needs a `kioskId` added — noted as a known follow-up in `STATUS.md`.
-
----
-
-## 5. If something goes wrong
+## 5. Troubleshooting
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Voucher redemption fails / "couldn't issue voucher" | Router unreachable — its internet connection is down, its DDNS hostname isn't resolving, or (if behind another router/modem) that device's port-forward dropped. If using the bridge fallback instead: bridge PC off or tunnel dropped | Check the router is online; from a browser, confirm its DDNS hostname (from `/ip cloud print`) resolves and responds. If on the bridge fallback, check the bridge PC is on and `infra/start-bridge.ps1` is running. Points are automatically refunded on failure either way, so the user hasn't lost anything |
-| A user says a redemption failed but their "points spent" total looks off | This was a real bug, fixed 2026-07-27 — refunded attempts were inflating the spent total even though the balance was correct. If you still see this after that date, something regressed — flag it | — |
-| "Start Recycling" flashes to "Session expired" immediately | This was a real bug, fixed 2026-07-27 — a timing issue in the countdown made the app declare the session expired the instant it started, even though the kiosk was still waiting. Should not recur | If it does, capture a screenshot and check the server logs around that timestamp |
-| A user never received their "reset password" email | Resend sandbox domain limitation — see §2, item 2 | Verify a sending domain in Resend, or reset the user's password directly |
-| A run of items come back "rejected" that should have been accepted | Classifier limitation (see §4) or a physical issue — lighting, camera angle, dirty lens | Check Admin → Deposit History for the `classificationLabel` on those rows; consider a retraining pass |
-| The kiosk device itself seems unresponsive | Hardware/firmware issue, not a web app issue | See `SYSTEM.md` → Firmware/Hardware sections |
-
----
-
-## 6. Recent fixes (this review pass, 2026-07-27)
-
-For a paper trail — these were found and fixed during this QA pass:
-
-- **Recycling session desync**: the on-screen countdown could immediately (and incorrectly) declare a session "expired" the moment it started, even though the kiosk was genuinely still waiting for a deposit for several more minutes.
-- **Vouchers never expired on screen**: a WiFi voucher stayed marked "ISSUED" forever, even long after its time window had passed, making it look usable when it wasn't.
-- **"Points spent" total was inflated**: a failed-then-refunded voucher redemption permanently added to the displayed "points spent" figure even though the user's actual balance was correctly refunded.
-- **Redemption failure message was unclear**: users weren't told their points had been refunded when a redemption failed.
-- **A rare race condition could push a balance negative**: two redemption requests at nearly the same instant could, in theory, both pass the "enough points" check before either was recorded — now the check and the deduction happen as a single atomic step.
-
-All five are covered by the git history on `master` with detailed commit messages if you want the technical explanation for any of them.
+| Google login fails on hotspot / stuck loading | MikroTik Walled Garden blocking Google OAuth subdomains | Ensure `infra/mikrotik-setup.rsc` Walled Garden wildcard rules (`*google.com`, `*googleapis.com`, `*gstatic.com`, `*googleusercontent.com`) are applied on the router |
+| Phone prompts for a WiFi password when joining "Fibott" | Security profile has WPA2 enabled | Run `/interface/wireless/security-profiles/set [find default=yes] mode=none authentication-types=none` on the router |
+| Voucher redemption fails / points keep getting refunded | Router REST API unreachable or misconfigured host | Check router internet connection and DDNS hostname. For offline dev/testing, set `MIKROTIK_HOST="mock"` in `.env.local` |
+| "Start Recycling" flashes to "Session expired" immediately | Resolved timing issue | Ensure latest frontend code is running |
+| Password reset email never arrives | Resend sandbox domain limitation | Verify custom sending domain in Resend or reset password manually in admin DB |

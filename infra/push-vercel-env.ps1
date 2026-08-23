@@ -1,23 +1,32 @@
-# Push MikroTik env vars to Vercel production.
-# Run AFTER setting up the ngrok tunnel and reserving your static domain.
+# Push MikroTik environment variables to Vercel production.
 #
 # Prerequisites:
-#   npm i -g vercel
-#   vercel login
+#   - infra/mikrotik-setup.rsc has been run on the router
+#   - npm i -g vercel
+#   - vercel login
 #
 # Fill in the values below, then run this script from the project root.
 
-# ngrok static domain pointing to the bridge (localhost:3001 on your LAN machine).
-# Reserve one at https://dashboard.ngrok.com (free tier includes one static domain).
-$BRIDGE_URL    = "https://cushy-tapeless-dividable.ngrok-free.app"
+# Router host: Use the "dns-name" field from `/ip cloud print` on the router (e.g.
+# abcd1234.sn.mynetname.net) or your router's public IP address.
+$MIKROTIK_HOST             = "<router-dns-name>.sn.mynetname.net"
 
-# Shared bearer secret between Vercel and the bridge.
-# Generate a strong random value: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-$BRIDGE_SECRET = "<your-bridge-secret>"
+# Router credentials and profile
+$MIKROTIK_USER             = "admin"
+$MIKROTIK_PASSWORD         = "<router-admin-password>"
+$MIKROTIK_HOTSPOT_PROFILE  = "1hour"
+$MIKROTIK_PROTOCOL         = "https"
+$MIKROTIK_PORT             = "443"
+$MIKROTIK_INSECURE_TLS     = "true"
 
 $env_pairs = @(
-    @{ name = "BRIDGE_URL";    value = $BRIDGE_URL },
-    @{ name = "BRIDGE_SECRET"; value = $BRIDGE_SECRET }
+    @{ name = "MIKROTIK_HOST";             value = $MIKROTIK_HOST },
+    @{ name = "MIKROTIK_USER";             value = $MIKROTIK_USER },
+    @{ name = "MIKROTIK_PASSWORD";         value = $MIKROTIK_PASSWORD },
+    @{ name = "MIKROTIK_HOTSPOT_PROFILE";  value = $MIKROTIK_HOTSPOT_PROFILE },
+    @{ name = "MIKROTIK_PROTOCOL";         value = $MIKROTIK_PROTOCOL },
+    @{ name = "MIKROTIK_PORT";             value = $MIKROTIK_PORT },
+    @{ name = "MIKROTIK_INSECURE_TLS";     value = $MIKROTIK_INSECURE_TLS }
 )
 
 foreach ($pair in $env_pairs) {
@@ -26,5 +35,5 @@ foreach ($pair in $env_pairs) {
 }
 
 Write-Host ""
-Write-Host "Done. Redeploy Vercel to pick up the new vars:"
+Write-Host "Done. Redeploy Vercel to pick up the new env vars:"
 Write-Host "  vercel --prod"

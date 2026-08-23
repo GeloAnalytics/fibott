@@ -117,7 +117,7 @@ function requestJson(
     req.on("timeout", () => {
       req.destroy(
         new Error(
-          `MikroTik request to ${host}:${port} timed out after 8s with no response. Either this machine can't reach the router's network (not on its LAN/WiFi, and no tunnel/bridge configured), or the router is reachable but its REST API (www/www-ssl service) isn't responding on this port.`
+          `MikroTik request to ${host}:${port} timed out after 8s with no response. Either this machine can't reach the router's network (not on its LAN/WiFi, or MIKROTIK_HOST IP/DDNS is unreachable), or the router's REST API (www/www-ssl service) isn't responding on port ${port}.`
         )
       );
     });
@@ -140,7 +140,7 @@ function describeConnectionError(error: NodeJS.ErrnoException, host: string, por
       return `Connection refused by ${host}:${port} — the host is reachable but nothing is listening on that port (wrong MIKROTIK_PORT/PROTOCOL, or the www/www-ssl service is disabled on the router).`;
     case "EHOSTUNREACH":
     case "ENETUNREACH":
-      return `No route to ${host} — this machine isn't on the same network as the router (not connected to its LAN/WiFi, and no tunnel/bridge configured for remote access).`;
+      return `No route to ${host} — this machine isn't on the same network as the router and MIKROTIK_HOST is unreachable.`;
     case "ECONNRESET":
       return `Connection to ${host}:${port} was reset — the router closed the connection mid-request.`;
     default:
@@ -164,16 +164,23 @@ export class MikrotikClient {
 
   /**
    * Creates a one-time hotspot user via the RouterOS REST API.
-   *
-   * This is the real implementation. It does not mock a voucher when the
-   * router is misconfigured; instead, it fails loudly so the redeem flow can
-   * surface the setup problem.
+   * If host is "mock" or ALLOW_MOCK_VOUCHER="true", generates a mock voucher code for testing.
    */
   async createHotspotVoucher(
     params: CreateHotspotVoucherParams
   ): Promise<CreateHotspotVoucherResult> {
+    const code = generateVoucherCode();
+
+    if (this.config.host === "mock" || process.env.ALLOW_MOCK_VOUCHER === "true") {
+      return {
+        success: true,
+        voucherRef: `MOCK-${Date.now()}`,
+        code,
+        expiresAt: new Date(Date.now() + params.durationMinutes * 60_000),
+      };
+    }
+
     try {
-      const code = generateVoucherCode();
       const response = await requestJson(
         this.config,
         "PUT",
@@ -222,53 +229,7 @@ export class MikrotikClient {
   }
 }
 
-class BridgeClient {
-  constructor(private url: string, private secret: string) {}
-
-  async createHotspotVoucher(
-    params: CreateHotspotVoucherParams
-  ): Promise<CreateHotspotVoucherResult> {
-    try {
-      const res = await fetch(`${this.url}/voucher`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.secret}`,
-        },
-        body: JSON.stringify({
-          durationMinutes: params.durationMinutes,
-          userId: params.label,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      const json = (await res.json()) as { success?: boolean; code?: string; error?: string };
-
-      if (!res.ok || !json.success || !json.code) {
-        return { success: false, errorMessage: json.error ?? `Bridge returned HTTP ${res.status}` };
-      }
-
-      return {
-        success: true,
-        code: json.code,
-        voucherRef: json.code,
-        expiresAt: new Date(Date.now() + params.durationMinutes * 60_000),
-      };
-    } catch (err) {
-      return {
-        success: false,
-        errorMessage: err instanceof Error ? err.message : "Bridge unreachable",
-      };
-    }
-  }
-}
-
-export function getMikrotikClient(): MikrotikClient | BridgeClient {
-  const bridgeUrl = process.env.BRIDGE_URL?.trim();
-  const bridgeSecret = process.env.BRIDGE_SECRET?.trim();
-  if (bridgeUrl && bridgeSecret) {
-    return new BridgeClient(bridgeUrl, bridgeSecret);
-  }
+export function getMikrotikClient(): MikrotikClient {
   return new MikrotikClient({
     host: process.env.MIKROTIK_HOST ?? "",
     user: process.env.MIKROTIK_USER ?? "",
@@ -279,3 +240,4 @@ export function getMikrotikClient(): MikrotikClient | BridgeClient {
     insecureTls: process.env.MIKROTIK_INSECURE_TLS === "true",
   });
 }
+

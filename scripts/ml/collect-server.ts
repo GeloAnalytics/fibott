@@ -101,10 +101,10 @@ const server = http.createServer((req, res) => {
 const PORT = 3002;
 const lanIp = getLanIp();
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\nFibott ML collect server — port ${PORT} (bridge uses 3001, collect uses 3002)`);
+  console.log(`\nFibott ML collect server — port ${PORT}`);
   console.log(`\nIn firmware/esp32-cam/config.h, set:`);
   console.log(`  #define BACKEND_HOST  "${lanIp}"`);
-  console.log(`  #define BACKEND_PORT  ${PORT}  // (not 3001 — that is the bridge)`);
+  console.log(`  #define BACKEND_PORT  ${PORT}`);
   console.log(`  // Revert to your Vercel hostname + 443 after collection.`);
   console.log(`\nImages land in: ml-data/inbox/`);
   console.log(`Sort them into: ml-data/PET_BOTTLE/  ml-data/ALUMINUM_CAN/  ml-data/REJECTED/`);

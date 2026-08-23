@@ -50,9 +50,8 @@ async function main() {
   console.log(`        Then remove it:`);
   console.log(`        /ip/hotspot/user/remove [find name="${result.code}"]\n`);
   console.log("✅ MikroTik connection is working.");
-  console.log("   For production: reserve an ngrok static domain, set");
-  console.log("   BRIDGE_URL + BRIDGE_SECRET in Vercel, then run the bridge");
-  console.log("   service via infra/start-bridge.ps1.");
+  console.log("   For production: set MIKROTIK_HOST to the router's DDNS hostname");
+  console.log("   or public IP and configure HTTPS API access in Vercel.");
 }
 
 main().catch((err) => {
