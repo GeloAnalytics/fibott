@@ -47,13 +47,14 @@ The Next.js backend communicates directly with the MikroTik RouterOS REST API to
 
 | Variable | Description / Value |
 |---|---|
-| `MIKROTIK_HOST` | Router's IP / DDNS hostname (e.g. `192.168.88.1` for local dev, or `abcd1234.sn.mynetname.net` for production). Set to `"mock"` to simulate vouchers without a router. |
+| `MIKROTIK_HOST` | Router's IP / DDNS hostname (e.g. `192.168.88.1` for local dev, or `hm20b2ta8p0.sn.mynetname.net` for production). Set to `"mock"` to simulate vouchers without a router. |
 | `MIKROTIK_USER` | Router admin username (default: `admin`) |
 | `MIKROTIK_PASSWORD` | Router admin password |
 | `MIKROTIK_HOTSPOT_PROFILE` | Hotspot profile name on router (default: `1hour`) |
 | `MIKROTIK_PROTOCOL` | `http` for local dev or `https` for production (default: `https`) |
 | `MIKROTIK_PORT` | `80` for local dev or `443` for production |
 | `MIKROTIK_INSECURE_TLS` | `true` if using self-signed router certificates |
+| `MIKROTIK_SYNC_KEY` | Shared secret key used by the RouterOS outbound sync script to authenticate polls to `/api/mikrotik/sync`. Must match the `:local syncKey` in the RouterOS script. |
 | `ALLOW_MOCK_VOUCHER` | `true` (optional) to allow mock voucher generation in testing environments |
 
 ---
@@ -79,9 +80,24 @@ Unauthenticated users connected to the Fibott hotspot are allowed to access only
 
 ---
 
-## Direct Router REST Integration
+## Router Integration (Direct REST & Outbound Polling Sync)
 
-The Next.js backend calls the MikroTik RouterOS REST API endpoint (`/rest/ip/hotspot/user`) directly when a user redeems points for a voucher.
+The Next.js backend supports two methods for HotSpot user creation:
+
+### Method 1: Outbound Router Polling Sync (Recommended — Network Independent)
+Requires **zero open ports**, **zero DDNS**, and **zero port forwarding**. Works automatically on any Wi-Fi, home network, campus network, or 4G/5G mobile hotspot.
+
+```
++-----------------------------------------------------------------------------------+
+| MikroTik ---> (HTTPS Outbound every 3s) ---> GET /api/mikrotik/sync               |
+| 1. Router polls Vercel for PENDING vouchers                                      |
+| 2. Router creates HotSpot user (/ip hotspot user add ...)                         |
+| 3. Router confirms issuance to Vercel (voucher status -> ISSUED)                  |
++-----------------------------------------------------------------------------------+
+```
+
+### Method 2: Direct REST API (Inbound HTTPS)
+If `MIKROTIK_HOST` is configured and reachable, Vercel calls `/rest/ip/hotspot/user` directly. If direct REST fails due to network reachability (e.g. router moved to a new network), the backend automatically falls back to queueing the voucher for Outbound Router Sync.
 
 ```
               POST /api/vouchers/redeem
@@ -90,33 +106,10 @@ The Next.js backend calls the MikroTik RouterOS REST API endpoint (`/rest/ip/hot
                     │
               MikrotikClient (Direct REST API)
                     │
-                    ▼
-             MikroTik REST API
-         <router-host>:443 / 80
+                    ├── (Success) ──> Hotspot User Created Immediately
+                    │
+                    └── (Network Failure) ──> Queued for Outbound Router Sync
 ```
-
-### Production Setup Requirements
-1. Run `infra/mikrotik-setup.rsc` on the router:
-   - Configures the open wireless security profile (no WiFi password).
-   - Adds Walled Garden wildcard rules for Google login and Fibott app.
-   - Enables MikroTik IP Cloud DDNS (`/ip cloud set ddns-enabled=yes`).
-   - Enables HTTPS REST API (`/ip service set www-ssl disabled=no port=443`).
-   - Adds firewall rules to allow WAN access on port 443 while dropping Winbox/SSH/FTP/Telnet from WAN.
-2. Set `MIKROTIK_HOST` in Vercel to the router's DDNS hostname (`<serial>.sn.mynetname.net`).
-
----
-
-## Components
-
-**Mobile App** — Primary UI. Login, start recycling session, view points, redeem voucher, view history.
-
-**ESP32-CAM** — Kiosk board. Polls backend for active sessions, captures images, uploads frames, drives the servo gate. Contains no business logic.
-
-**Next.js Backend (Vercel / Local)** — Owns auth, sessions, classification, points, voucher generation, and MikroTik integration.
-
-**Neon PostgreSQL** — Stores users, sessions, deposits, points, vouchers, devices.
-
-**MikroTik hAP ax lite** — Hotspot AP. Issues internet access via voucher codes. Knows nothing about recycling; only receives user creation commands from the backend via REST API.
 
 ---
 
@@ -134,6 +127,7 @@ The Next.js backend calls the MikroTik RouterOS REST API endpoint (`/rest/ip/hot
 | `DELETE /api/admin/logs` | Admin Portal | Purge old log entries |
 | `POST /api/device/scan` | ESP32-CAM (test) | Pre-classified result, no image upload |
 | `POST /api/vouchers/redeem` | Mobile App | Spend points → create MikroTik hotspot user → return voucher code |
+| `GET /api/mikrotik/sync` | MikroTik Router | Outbound router poll & voucher issuance confirmation |
 
 ---
 
@@ -178,11 +172,14 @@ Dashboard shows "Deposit successful! +N points"
 
 1. User presses **Redeem** in the app.
 2. Backend deducts points atomically via `spendPoints()` in `src/lib/points.ts` (`WHERE pointsBalance >= amount`).
-3. Backend calls MikroTik RouterOS REST API → creates a hotspot user (`name=FBT-XXXX-XXXX-XXXX`, same value as password, `profile=1hour`).
-   - If `MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"`, a mock voucher code is generated.
-   - If the router API call fails (e.g. router unreachable), the points are refunded immediately via `refundPoints()`.
-4. Voucher code is stored in DB and displayed on screen.
-5. User enters the code at the MikroTik captive portal to get internet access.
+3. Backend attempts to create a HotSpot user via **Direct REST** to the MikroTik router.
+   - If `MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"`, a mock voucher code is returned instantly.
+   - If direct REST succeeds → voucher status is set to `ISSUED` immediately.
+   - If direct REST fails due to **network reachability** (router behind NAT, moved to a new network, CGNAT, etc.) → voucher is saved as `PENDING` with a pre-generated code (`FBT-XXXX-XXXX-XXXX`) and queued for **Outbound Router Sync**.
+   - If direct REST fails for any other reason (auth, profile not found, validation) → points are refunded via `refundPoints()`.
+4. Voucher code (`FBT-XXXX-XXXX-XXXX`) is stored in DB and displayed on screen immediately regardless of delivery method.
+5. **Outbound Router Sync** (if PENDING): The MikroTik router polls `/api/mikrotik/sync?key=<MIKROTIK_SYNC_KEY>` every 3 seconds, creates the HotSpot user locally, and confirms issuance. Voucher status transitions `PENDING → ISSUED`.
+6. User enters the voucher code at the MikroTik captive portal to get internet access.
 
 ---
 

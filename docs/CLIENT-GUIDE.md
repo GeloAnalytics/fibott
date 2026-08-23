@@ -1,6 +1,6 @@
 # Fibott — Operator's Guide
 
-*Last updated: 2026-08-23*
+*Last updated: 2026-08-24*
 
 This is the plain-language guide for whoever runs Fibott day to day — not the engineering reference. For architecture, environment variables, and hardware wiring, see [SYSTEM.md](SYSTEM.md) and [STATUS.md](STATUS.md).
 
@@ -22,7 +22,11 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 3. **Verify Google Sign-In Walled Garden Rules.** Unauthenticated users connected to the hotspot must be allowed to complete Google OAuth. Verify that `infra/mikrotik-setup.rsc` Walled Garden rules (`*google.com`, `*googleapis.com`, `*gstatic.com`, `*googleusercontent.com`, `fibott.vercel.app`) have been executed on the router.
 
-4. **Get the router REST API reachable from the internet**, or voucher redemption will fail. The MikroTik router sits on your local network at `192.168.88.1`, which the hosted Vercel app cannot reach directly unless exposed via DDNS and port 443 HTTPS. Run `infra/mikrotik-setup.rsc` on the router and set `MIKROTIK_HOST` in Vercel to the router's IP Cloud DDNS hostname.
+4. **Set up voucher delivery for production.** There are two modes:
+   - **Outbound Router Sync (Recommended):** Paste **Section 8** of `infra/mikrotik-setup.rsc` into the RouterOS terminal (Winbox or SSH). The router polls `https://fibott.vercel.app/api/mikrotik/sync` every 3 seconds and creates HotSpot users automatically — requires no open ports, no DDNS, and no port forwarding. Works on any internet connection.
+   - **Direct REST (Optional):** Set `MIKROTIK_HOST` in Vercel to the router's DDNS hostname (`hm20b2ta8p0.sn.mynetname.net`) and ensure TCP port 443 is forwarded through any upstream router to the MikroTik. Also set `MIKROTIK_HOTSPOT_PROFILE=1hour` in Vercel. If direct REST fails due to connectivity, the backend automatically falls back to outbound sync queueing.
+   
+   Both modes require that the `1hour` hotspot profile exists on the router (`/ip/hotspot/user/profile/print`).
 
 5. **Set up a verified sending domain in Resend, or password reset will silently fail.** Right now `EMAIL_FROM` is `onboarding@resend.dev` — Resend's sandbox address, which only delivers to the Resend account owner's own inbox. Registration doesn't need email anymore (it auto-verifies), but **"Forgot password" still sends a real email**, and that email will never arrive for a real user until a custom domain is verified in Resend.
 
@@ -32,7 +36,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 
 ## 3. Daily / weekly operation
 
-**Keep the router online.** If the MikroTik router loses power or its internet connection, recycling still works and points still get awarded, but **voucher redemption will fail** until it is reachable again. (If testing locally without a router, set `MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"` in `.env.local`).
+**Keep the router online.** If the MikroTik router loses power or its internet connection, recycling still works and points still get awarded. Vouchers redeemed while the router is offline will appear as `PENDING` in the admin panel, with their codes displayed to the user immediately. Once the router comes back online and polls `/api/mikrotik/sync`, those vouchers are automatically activated (status changes to `ISSUED`) without any manual intervention.
 
 **Check these admin pages regularly:**
 
@@ -40,7 +44,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 |---|---|
 | Admin → Dashboard | Totals — user count, vouchers issued, items recycled |
 | Admin → Deposit History | A sudden run of `REJECTED` items — camera angle shifted or new item type |
-| Admin → Voucher Management | Vouchers stuck as `FAILED` — usually means the router was unreachable at that moment |
+| Admin → Voucher Management | Vouchers stuck as `PENDING` — means the router hasn't polled yet or the sync script isn't running. Vouchers stuck as `FAILED` — auth/profile error requiring investigation. |
 | Admin → Audit Logs | Who changed reward/voucher settings, and when |
 
 ---
@@ -59,6 +63,7 @@ These are not optional. Skipping them means real users will hit dead ends.
 |---|---|---|
 | Google login fails on hotspot / stuck loading | MikroTik Walled Garden blocking Google OAuth subdomains | Ensure `infra/mikrotik-setup.rsc` Walled Garden wildcard rules (`*google.com`, `*googleapis.com`, `*gstatic.com`, `*googleusercontent.com`) are applied on the router |
 | Phone prompts for a WiFi password when joining "Fibott" | Security profile has WPA2 enabled | Run `/interface/wireless/security-profiles/set [find default=yes] mode=none authentication-types=none` on the router |
-| Voucher redemption fails / points keep getting refunded | Router REST API unreachable or misconfigured host | Check router internet connection and DDNS hostname. For offline dev/testing, set `MIKROTIK_HOST="mock"` in `.env.local` |
+| Voucher redemption fails / points keep getting refunded | Router REST API auth or profile misconfigured | Check `MIKROTIK_USER`, `MIKROTIK_PASSWORD`, and `MIKROTIK_HOTSPOT_PROFILE=1hour` in Vercel. Auth/validation errors cause immediate refund. For offline dev/testing, set `MIKROTIK_HOST="mock"` in `.env.local`. |
+| Voucher stuck as `PENDING` for more than 30 seconds | Outbound sync script not installed or not running | SSH or Winbox into the MikroTik, run `/system scheduler print` — if `fibott-sync-scheduler` is not listed, paste Section 8 of `infra/mikrotik-setup.rsc` into the terminal. |
 | "Start Recycling" flashes to "Session expired" immediately | Resolved timing issue | Ensure latest frontend code is running |
 | Password reset email never arrives | Resend sandbox domain limitation | Verify custom sending domain in Resend or reset password manually in admin DB |

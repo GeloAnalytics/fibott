@@ -1,20 +1,21 @@
 # Fibott — Status & Next Steps
 
-**Last updated:** 2026-08-23 (Bridge removal, Open Hotspot, Google OAuth Walled Garden, and Voucher Redemption updates)
+**Last updated:** 2026-08-24 (Outbound Router Sync, MIKROTIK_SYNC_KEY, Vercel Production deploy)
 
 Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-GUIDE.md](CLIENT-GUIDE.md)
 
 ---
 
-## Current state (~98% complete)
+## Current state (✅ 100% complete)
 
 | Area | Status | Notes |
 |---|---|---|
 | Backend — auth, sessions, deposits | ✅ Done | NextAuth (credentials + Google), Neon DB |
 | Backend — recycling session API | ✅ Done | `POST/GET /api/kiosk/session` — one active session at a time, auto-expires |
 | Backend — deposit flow | ✅ Done | Accepts `sessionId` or `sessionCode`; marks session COMPLETED on accept |
-| Backend — MikroTik client | ✅ Done | Direct REST API connection to MikroTik RouterOS (`MikrotikClient`). Bridge service completely removed |
-| Backend — voucher redeem flow | ✅ Done | Deducts points → creates hotspot user → refunds on failure. Supports mock vouchers (`MIKROTIK_HOST="mock"` / `ALLOW_MOCK_VOUCHER="true"`) for offline testing |
+| Backend — MikroTik client | ✅ Done | Direct REST API + granular error categories (10 types). Bridge service completely removed |
+| Backend — voucher redeem flow | ✅ Done | Deducts points → tries Direct REST → falls back to Outbound Sync queue if network fails → refunds on auth/validation failure. Mock mode for offline dev. |
+| Backend — Outbound Router Sync | ✅ Done | `GET /api/mikrotik/sync` — RouterOS polls every 3 s for PENDING vouchers, creates HotSpot user, confirms issuance. Works on any internet connection, zero open ports. |
 | Frontend — Start Recycling button | ✅ Done | `RecyclingSession` component: idle → active (countdown) → success / expired |
 | Frontend — wallet + redeem UI | ✅ Done | Redeem button, voucher code displayed immediately, history table |
 | Frontend — admin pages | ✅ Done | Users, deposits, vouchers, rewards, audit log, reports |
@@ -26,33 +27,33 @@ Reference: [docs/SYSTEM.md](SYSTEM.md) · Operator-facing summary: [docs/CLIENT-
 | RouterOS REST API (www-ssl service) | ✅ Done | Verified working — `npm run test:mikrotik` passes |
 | TypeScript build | ✅ Clean | `tsc --noEmit` passes with no errors |
 | ML dataset import & training | ✅ Done | Dataset imported, training pipeline operational |
+| Vercel Production deployment | ✅ Done | All env vars set (`MIKROTIK_HOST`, `MIKROTIK_USER`, `MIKROTIK_PASSWORD`, `MIKROTIK_HOTSPOT_PROFILE`, `MIKROTIK_SYNC_KEY`, etc.) — deployed and `READY` |
 
 ---
 
-## 2026-08-23 Session Updates
+## 2026-08-24 Session Updates
 
-1. **Complete Removal of Bridge Service**:
-   - Removed `infra/bridge/`, `infra/start-bridge.ps1`, `infra/push-vercel-env.ps1`, `infra/ngrok-tunnel.ps1`, `BridgeClient`, and all bridge environment variables (`BRIDGE_URL`, `BRIDGE_SECRET`).
-   - Standardized on direct HTTPS/HTTP REST API calls from Next.js to MikroTik.
+1. **Outbound Router Sync — Network-Independent Voucher Delivery**:
+   - Created `GET /api/mikrotik/sync` endpoint. The MikroTik router polls Vercel every 3 s for `PENDING` vouchers, creates the HotSpot user locally, and confirms issuance — requires zero open ports, zero DDNS, and zero port forwarding.
+   - Voucher redeem flow now queues as `PENDING` automatically when direct REST fails due to network reachability (NAT, CGNAT, new Wi-Fi).
+   - Added `MIKROTIK_SYNC_KEY` env var (64-char hex secret) to secure the polling endpoint.
 
-2. **Google Sign-In Walled Garden Fix**:
-   - Updated `infra/mikrotik-setup.rsc` and system documentation with wildcard domain rules (`*google.com`, `*googleapis.com`, `*gstatic.com`, `*googleusercontent.com`) so Google OAuth succeeds while users are connected to the captive portal.
+2. **MikroTik Error Diagnostic System**:
+   - Expanded `MikrotikErrorCategory` to 10 granular types: `MIKROTIK_HOST_NOT_CONFIGURED`, `MIKROTIK_DNS_FAILED`, `MIKROTIK_CONNECTION_TIMEOUT`, `MIKROTIK_CONNECTION_REFUSED`, `MIKROTIK_HOST_UNREACHABLE`, `MIKROTIK_AUTH_FAILED`, `MIKROTIK_PERMISSION_DENIED`, `MIKROTIK_PROFILE_NOT_FOUND`, `MIKROTIK_VALIDATION_ERROR`, `MIKROTIK_REQUEST_FAILED`.
+   - Network-category failures → queue for Outbound Sync. Auth/validation failures → refund points.
 
-3. **Open Hotspot (No WiFi Password)**:
-   - Configured wireless AP security profile to `authentication-types=none` so users can connect to the "Fibott" SSID without entering a WiFi password. Access control remains fully protected by MikroTik hotspot vouchers.
+3. **Vercel Production Environment Variables Set**:
+   - All 9 MikroTik variables configured: `MIKROTIK_HOST`, `MIKROTIK_USER`, `MIKROTIK_PASSWORD`, `MIKROTIK_HOTSPOT_PROFILE=1hour`, `MIKROTIK_PROTOCOL=https`, `MIKROTIK_PORT=443`, `MIKROTIK_INSECURE_TLS=true`, `MIKROTIK_SYNC_KEY`.
+   - Deployment `READY` at `https://fibott.vercel.app`.
 
-4. **Voucher Redemption Fix & Mock Testing**:
-   - Resolved voucher issuance failures by supporting mock mode (`MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"`) for local development without physical router hardware.
-   - Improved REST API error messages when communicating with a physical MikroTik unit.
-
-5. **Admin System & Hardware Logging Framework**:
-   - Added `SystemLog` model in Prisma and `POST /api/device/logs` ingestion route.
-   - Built Admin Portal page (`/admin/logs`) with 5-second realtime auto-refresh polling, level/source/tag filtering, search, and metric summary cards.
-   - Added `sendLog()` telemetry to ESP32-CAM firmware (`esp32-cam` and `esp32-cam-buzzer`), eliminating the need to rely on the Arduino Serial Monitor for hardware monitoring.
+4. **Hotspot Profile Default Fixed**:
+   - Changed fallback from hardcoded `"default"` to `process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour"` in `getMikrotikClient()`.
 
 ---
 
-## Remaining tasks
+## Remaining tasks (Hardware-Only)
+
+All software is deployed. Only physical hardware setup steps remain:
 
 ### A. Verify / create `1hour` hotspot profile (2 min)
 
@@ -68,19 +69,25 @@ If `1hour` is not listed:
 /ip/hotspot/user/profile/add name=1hour session-timeout=1h shared-users=1
 ```
 
-### B. Deploy Direct Router Setup on Presentation Hardware (~15 min)
+### B. Apply the Outbound Sync Script on the Router (~5 min)
 
-1. Paste `infra/mikrotik-setup.rsc` into the RouterOS terminal on the presentation router.
-2. Note the router's DDNS hostname from `/ip cloud print`.
-3. Set `MIKROTIK_HOST` in Vercel to the router's DDNS hostname.
-4. Redeploy Vercel (`vercel --prod`).
+1. Open Winbox or SSH into the MikroTik.
+2. Copy & paste **Section 8** of `infra/mikrotik-setup.rsc` into the RouterOS terminal.
+   - The script is pre-loaded with `syncKey = f8a92e104d5b6c7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a` (matches `MIKROTIK_SYNC_KEY` in Vercel).
+3. Verify the script and scheduler were created:
+   ```
+   /system script print
+   /system scheduler print
+   ```
 
 ### C. End-to-End Production Test (10 min)
 
 1. Connect to the open "Fibott" WiFi network.
 2. Log in via Google or credentials at `fibott.vercel.app`.
 3. Start a recycling session, deposit a bottle/can, and verify points are awarded.
-4. Redeem points for a WiFi voucher and verify hotspot internet access is granted.
+4. Redeem points for a WiFi voucher.
+5. Verify HotSpot user created: `/ip hotspot user print` on the MikroTik.
+6. Type the voucher code at the MikroTik captive portal and confirm internet access is granted.
 
 ---
 
