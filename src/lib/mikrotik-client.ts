@@ -7,12 +7,21 @@ export interface CreateHotspotVoucherParams {
   label: string;
 }
 
+export type MikrotikErrorCategory =
+  | "MIKROTIK_CONNECTION_TIMEOUT"
+  | "MIKROTIK_HOST_UNREACHABLE"
+  | "MIKROTIK_DNS_FAILED"
+  | "MIKROTIK_AUTH_FAILED"
+  | "MIKROTIK_PROFILE_NOT_FOUND"
+  | "MIKROTIK_REQUEST_FAILED";
+
 export interface CreateHotspotVoucherResult {
   success: boolean;
   voucherRef?: string;
   code?: string;
   expiresAt?: Date;
   errorMessage?: string;
+  errorCategory?: MikrotikErrorCategory;
 }
 
 export interface MikrotikConfig {
@@ -115,14 +124,14 @@ function requestJson(
     const port = options.port as number;
 
     req.on("timeout", () => {
-      req.destroy(
-        new Error(
-          `MikroTik request to ${host}:${port} timed out after 8s with no response. Either this machine can't reach the router's network (not on its LAN/WiFi, or MIKROTIK_HOST IP/DDNS is unreachable), or the router's REST API (www/www-ssl service) isn't responding on port ${port}.`
-        )
+      const err = new Error(
+        `MikroTik request to ${host}:${port} timed out after 8s with no response. Either this machine can't reach the router's network (not on its LAN/WiFi, or MIKROTIK_HOST IP/DDNS is unreachable), or the router's REST API (www/www-ssl service) isn't responding on port ${port}.`
       );
+      (err as unknown as { code: string }).code = "ETIMEDOUT";
+      req.destroy(err);
     });
     req.on("error", (error: NodeJS.ErrnoException) => {
-      reject(new Error(describeConnectionError(error, host, port)));
+      reject(error);
     });
     if (payload) {
       req.write(payload);
@@ -131,21 +140,20 @@ function requestJson(
   });
 }
 
-function describeConnectionError(error: NodeJS.ErrnoException, host: string, port: number): string {
-  switch (error.code) {
-    case "ENOTFOUND":
-    case "EAI_AGAIN":
-      return `Could not resolve host "${host}" — check MIKROTIK_HOST and DNS/DDNS setup.`;
-    case "ECONNREFUSED":
-      return `Connection refused by ${host}:${port} — the host is reachable but nothing is listening on that port (wrong MIKROTIK_PORT/PROTOCOL, or the www/www-ssl service is disabled on the router).`;
-    case "EHOSTUNREACH":
-    case "ENETUNREACH":
-      return `No route to ${host} — this machine isn't on the same network as the router and MIKROTIK_HOST is unreachable.`;
-    case "ECONNRESET":
-      return `Connection to ${host}:${port} was reset — the router closed the connection mid-request.`;
-    default:
-      return error.message;
+function classifyErrorCategory(error: unknown, statusCode?: number, rawBody?: string): MikrotikErrorCategory {
+  if (statusCode === 401 || statusCode === 403) {
+    return "MIKROTIK_AUTH_FAILED";
   }
+  if (rawBody && /no such profile|unknown profile/i.test(rawBody)) {
+    return "MIKROTIK_PROFILE_NOT_FOUND";
+  }
+  if (error instanceof Error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ETIMEDOUT" || error.message.includes("timed out")) return "MIKROTIK_CONNECTION_TIMEOUT";
+    if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "MIKROTIK_DNS_FAILED";
+    if (code === "ECONNREFUSED" || code === "EHOSTUNREACH" || code === "ENETUNREACH") return "MIKROTIK_HOST_UNREACHABLE";
+  }
+  return "MIKROTIK_REQUEST_FAILED";
 }
 
 function getErrorMessage(rawBody: string, fallback: string): string {
@@ -195,12 +203,14 @@ export class MikrotikClient {
       );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        const errorMsg = getErrorMessage(
+          response.rawBody,
+          `RouterOS returned HTTP ${response.statusCode}`
+        );
         return {
           success: false,
-          errorMessage: getErrorMessage(
-            response.rawBody,
-            `RouterOS returned HTTP ${response.statusCode}`
-          ),
+          errorMessage: errorMsg,
+          errorCategory: classifyErrorCategory(null, response.statusCode, response.rawBody),
         };
       }
 
@@ -224,6 +234,7 @@ export class MikrotikClient {
       return {
         success: false,
         errorMessage: message,
+        errorCategory: classifyErrorCategory(error),
       };
     }
   }
@@ -234,7 +245,7 @@ export function getMikrotikClient(): MikrotikClient {
     host: process.env.MIKROTIK_HOST ?? "",
     user: process.env.MIKROTIK_USER ?? "",
     password: process.env.MIKROTIK_PASSWORD ?? "",
-    hotspotProfile: process.env.MIKROTIK_HOTSPOT_PROFILE ?? "default",
+    hotspotProfile: process.env.MIKROTIK_HOTSPOT_PROFILE || "1hour",
     protocol: (process.env.MIKROTIK_PROTOCOL as "http" | "https" | undefined) ?? "https",
     port: process.env.MIKROTIK_PORT ? Number(process.env.MIKROTIK_PORT) : undefined,
     insecureTls: process.env.MIKROTIK_INSECURE_TLS === "true",

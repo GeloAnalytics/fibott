@@ -94,10 +94,13 @@ export async function POST(req: Request) {
     });
   }
 
+  const failureCategory = result.errorCategory ?? "MIKROTIK_REQUEST_FAILED";
+  const failureDetail = `[${failureCategory}] ${result.errorMessage ?? "Unknown error"}`;
+
   const balance = await prisma.$transaction(async (tx) => {
     await tx.voucher.update({
       where: { id: voucherId },
-      data: { status: "FAILED", failureReason: result.errorMessage ?? "Unknown error" },
+      data: { status: "FAILED", failureReason: failureDetail },
     });
     return refundPoints(tx, {
       userId,
@@ -110,12 +113,17 @@ export async function POST(req: Request) {
     source: "SYSTEM",
     level: "ERROR",
     tag: "MIKROTIK",
-    message: `Voucher issuance failed for user ${userId}`,
-    details: { voucherId, error: result.errorMessage },
+    message: `Voucher issuance failed (${failureCategory}): ${result.errorMessage ?? "Unknown error"}`,
+    details: { voucherId, userId, errorCategory: failureCategory, error: result.errorMessage },
   });
 
   return NextResponse.json(
-    { error: "VOUCHER_ISSUANCE_FAILED", userPointsBalance: balance },
+    {
+      error: "VOUCHER_ISSUANCE_FAILED",
+      errorCategory: failureCategory,
+      details: result.errorMessage,
+      userPointsBalance: balance,
+    },
     { status: 502 }
   );
 }
