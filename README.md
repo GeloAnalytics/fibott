@@ -56,13 +56,14 @@ Required:
 - `NEXTAUTH_URL`
 
 MikroTik Router Configuration:
-- `MIKROTIK_HOST` (e.g. `192.168.88.1`, DDNS hostname for production, or `"mock"` for offline testing)
+- `MIKROTIK_HOST` (e.g. `192.168.88.1`, DDNS hostname for production e.g. `hm20b2ta8p0.sn.mynetname.net`, or `"mock"` for offline testing)
 - `MIKROTIK_USER` (default: `admin`)
 - `MIKROTIK_PASSWORD`
 - `MIKROTIK_HOTSPOT_PROFILE` (default: `1hour`)
 - `MIKROTIK_PROTOCOL` (default: `https`)
 - `MIKROTIK_PORT` (default: `443`)
 - `MIKROTIK_INSECURE_TLS` (default: `true`)
+*Note: If the MikroTik router is behind an upstream router (e.g. TP-Link), add a port forward on the TP-Link for TCP 443 → MikroTik WAN IP (e.g. 192.168.1.80:443).*
 
 5. Run the app
 

@@ -8,11 +8,15 @@ export interface CreateHotspotVoucherParams {
 }
 
 export type MikrotikErrorCategory =
-  | "MIKROTIK_CONNECTION_TIMEOUT"
-  | "MIKROTIK_HOST_UNREACHABLE"
+  | "MIKROTIK_HOST_NOT_CONFIGURED"
   | "MIKROTIK_DNS_FAILED"
+  | "MIKROTIK_CONNECTION_TIMEOUT"
+  | "MIKROTIK_CONNECTION_REFUSED"
+  | "MIKROTIK_HOST_UNREACHABLE"
   | "MIKROTIK_AUTH_FAILED"
+  | "MIKROTIK_PERMISSION_DENIED"
   | "MIKROTIK_PROFILE_NOT_FOUND"
+  | "MIKROTIK_VALIDATION_ERROR"
   | "MIKROTIK_REQUEST_FAILED";
 
 export interface CreateHotspotVoucherResult {
@@ -36,7 +40,7 @@ export interface MikrotikConfig {
 
 const VOUCHER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-function generateVoucherCode(): string {
+export function generateVoucherCode(): string {
   const bytes = crypto.randomBytes(12);
   let token = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -141,17 +145,30 @@ function requestJson(
 }
 
 function classifyErrorCategory(error: unknown, statusCode?: number, rawBody?: string): MikrotikErrorCategory {
-  if (statusCode === 401 || statusCode === 403) {
+  if (statusCode === 401) {
     return "MIKROTIK_AUTH_FAILED";
   }
-  if (rawBody && /no such profile|unknown profile/i.test(rawBody)) {
+  if (statusCode === 403) {
+    return "MIKROTIK_PERMISSION_DENIED";
+  }
+  if (rawBody && /profile/i.test(rawBody) && /no such|unknown|not found|invalid/i.test(rawBody)) {
     return "MIKROTIK_PROFILE_NOT_FOUND";
   }
+  if (statusCode === 400 || statusCode === 422) {
+    if (rawBody && /profile/i.test(rawBody)) {
+      return "MIKROTIK_PROFILE_NOT_FOUND";
+    }
+    return "MIKROTIK_VALIDATION_ERROR";
+  }
   if (error instanceof Error) {
+    if (error.message.includes("MIKROTIK_HOST is not configured")) {
+      return "MIKROTIK_HOST_NOT_CONFIGURED";
+    }
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ETIMEDOUT" || error.message.includes("timed out")) return "MIKROTIK_CONNECTION_TIMEOUT";
     if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "MIKROTIK_DNS_FAILED";
-    if (code === "ECONNREFUSED" || code === "EHOSTUNREACH" || code === "ENETUNREACH") return "MIKROTIK_HOST_UNREACHABLE";
+    if (code === "ECONNREFUSED") return "MIKROTIK_CONNECTION_REFUSED";
+    if (code === "EHOSTUNREACH" || code === "ENETUNREACH") return "MIKROTIK_HOST_UNREACHABLE";
   }
   return "MIKROTIK_REQUEST_FAILED";
 }
@@ -245,7 +262,7 @@ export function getMikrotikClient(): MikrotikClient {
     host: process.env.MIKROTIK_HOST ?? "",
     user: process.env.MIKROTIK_USER ?? "",
     password: process.env.MIKROTIK_PASSWORD ?? "",
-    hotspotProfile: process.env.MIKROTIK_HOTSPOT_PROFILE || "1hour",
+    hotspotProfile: process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour",
     protocol: (process.env.MIKROTIK_PROTOCOL as "http" | "https" | undefined) ?? "https",
     port: process.env.MIKROTIK_PORT ? Number(process.env.MIKROTIK_PORT) : undefined,
     insecureTls: process.env.MIKROTIK_INSECURE_TLS === "true",

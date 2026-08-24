@@ -3,7 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { spendPoints, refundPoints, InsufficientPointsError } from "@/lib/points";
-import { getMikrotikClient } from "@/lib/mikrotik-client";
+import { getMikrotikClient, generateVoucherCode } from "@/lib/mikrotik-client";
 import { logSystemEvent } from "@/lib/logger";
 
 const schema = z.object({ voucherRuleId: z.string() });
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       source: "SYSTEM",
       level: "INFO",
       tag: "MIKROTIK",
-      message: `Voucher issued successfully (${result.code})`,
+      message: `Voucher issued successfully via direct REST (${result.code})`,
       details: { voucherId: voucher.id, userId, durationMinutes: voucherRule.durationMinutes },
     });
 
@@ -95,6 +95,49 @@ export async function POST(req: Request) {
   }
 
   const failureCategory = result.errorCategory ?? "MIKROTIK_REQUEST_FAILED";
+
+  // If failure is due to direct network connection/reachability (e.g. router behind NAT / on new Wi-Fi without open ports),
+  // queue the voucher for outbound MikroTik polling sync:
+  const isNetworkFailure =
+    failureCategory === "MIKROTIK_HOST_NOT_CONFIGURED" ||
+    failureCategory === "MIKROTIK_HOST_UNREACHABLE" ||
+    failureCategory === "MIKROTIK_CONNECTION_REFUSED" ||
+    failureCategory === "MIKROTIK_CONNECTION_TIMEOUT" ||
+    failureCategory === "MIKROTIK_DNS_FAILED";
+
+  if (isNetworkFailure) {
+    const code = generateVoucherCode();
+    const profile = process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour";
+
+    const voucher = await prisma.voucher.update({
+      where: { id: voucherId },
+      data: {
+        code,
+        status: "PENDING",
+        mikrotikProfile: profile,
+      },
+    });
+
+    await logSystemEvent({
+      source: "SYSTEM",
+      level: "INFO",
+      tag: "MIKROTIK",
+      message: `Direct REST unreachable (${failureCategory}). Voucher queued for outbound router sync (${code})`,
+      details: { voucherId: voucher.id, userId, code, failureCategory },
+    });
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    return NextResponse.json({
+      voucherId: voucher.id,
+      code: voucher.code,
+      durationMinutes: voucher.durationMinutes,
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + voucher.durationMinutes * 60_000),
+      userPointsBalance: user.pointsBalance,
+      message: "Voucher generated and queued for HotSpot router activation.",
+    });
+  }
+
   const failureDetail = `[${failureCategory}] ${result.errorMessage ?? "Unknown error"}`;
 
   const balance = await prisma.$transaction(async (tx) => {

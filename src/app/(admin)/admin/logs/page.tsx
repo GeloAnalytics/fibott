@@ -102,6 +102,7 @@ export default function AdminLogsPage() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs(true);
   }, [fetchLogs]);
 

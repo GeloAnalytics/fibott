@@ -109,11 +109,49 @@
 # any general "drop all from WAN" rule already on this router):
 /ip firewall filter print
 
-# 7d. Which user to expose. Using admin for now (accepted risk, see step 4's
-# note and docs/STATUS.md) — switch to fibott-api once its REST permissions
-# are sorted out, no other change needed since it's just an env var swap.
+# 7e. Upstream Router / Double-NAT Configuration (Optional for direct REST)
+# If using direct REST behind an upstream TP-Link router, set up port forward: 443 -> 192.168.1.80:443.
+
+# ── 8. Outbound Router Sync (Recommended — Zero Open Ports Required) ─────────
+# Works on ANY internet connection (mobile hotspot, campus WiFi, home router, CGNAT)
+# without requiring DDNS, open ports, or upstream port forwarding.
 #
-# Password check: whichever account ends up exposed here is about to be
-# reachable from the whole internet over HTTP Basic Auth — make sure its
-# password is a long random string, not something memorable. Regenerate if needed:
-# /user/set admin password=<NEW-STRONG-RANDOM-PASSWORD>
+# The router polls Vercel outbound every 3 seconds for pending vouchers,
+# creates the HotSpot user locally, and confirms issuance.
+
+/system script add name=fibott-sync policy=read,write,test source="
+:local syncKey \"f8a92e104d5b6c7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a\"
+:local appUrl \"https://fibott.vercel.app/api/mikrotik/sync\"
+
+:do {
+  :local fetchUrl \"\$appUrl\?key=\$syncKey\"
+  :if ([:len \$syncKey] = 0) do={ :set fetchUrl \$appUrl }
+  :local res [/tool fetch url=\$fetchUrl mode=https output=user as-value]
+  :local data (\$res->\"data\")
+  :if (\$data ~ \"^PENDING:\") do={
+    :local firstColon [:find \$data \":\" 0]
+    :local secondColon [:find \$data \":\" (\$firstColon + 1)]
+    :local thirdColon [:find \$data \":\" (\$secondColon + 1)]
+    :local fourthColon [:find \$data \":\" (\$thirdColon + 1)]
+
+    :local vId [:pick \$data (\$firstColon + 1) \$secondColon]
+    :local vCode [:pick \$data (\$secondColon + 1) \$thirdColon]
+    :local vProf [:pick \$data (\$thirdColon + 1) \$fourthColon]
+    :local vUptime [:pick \$data (\$fourthColon + 1) [:len \$data]]
+
+    :do {
+      /ip hotspot user add name=\$vCode password=\$vCode profile=\$vProf limit-uptime=\$vUptime comment=\$vId
+      :local confirmUrl \"\$appUrl\?confirm=\$vId\"
+      :if ([:len \$syncKey] > 0) do={ :set confirmUrl \"\$appUrl\?key=\$syncKey&confirm=\$vId\" }
+      /tool fetch url=\$confirmUrl mode=https output=user
+      :log info (\"Fibott: Created hotspot user \$vCode\")
+    } on-error={
+      :log error (\"Fibott: Failed to create user \$vCode\")
+    }
+  }
+} on-error={}
+"
+
+# Add background scheduler (runs every 3 seconds):
+/system scheduler add name=fibott-sync-scheduler interval=3s on-event=fibott-sync
+
