@@ -16,6 +16,8 @@ import {
 import { formatPHT } from "@/lib/date-utils";
 import { RedeemSection } from "./redeem-section";
 
+import { VoucherActions } from "@/components/user/voucher-actions";
+
 const VOUCHER_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   ISSUED: "default",
   PENDING: "secondary",
@@ -103,6 +105,7 @@ export default async function WalletPage() {
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Issued</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -119,6 +122,13 @@ export default async function WalletPage() {
                       {voucher.issuedAt
                         ? formatPHT(voucher.issuedAt)
                         : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {voucher.status !== "FAILED" && voucher.status !== "EXPIRED" && (
+                        <div className="flex justify-end">
+                          <VoucherActions code={voucher.code} variant="compact" />
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

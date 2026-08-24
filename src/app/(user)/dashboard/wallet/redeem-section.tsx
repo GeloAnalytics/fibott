@@ -7,6 +7,8 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import { VoucherActions } from "@/components/user/voucher-actions";
+
 interface VoucherRuleOption {
   id: string;
   label: string;
@@ -60,16 +62,7 @@ export function RedeemSection({
     <div className="space-y-3">
       <h2 className="text-lg font-medium">Redeem for WiFi</h2>
 
-      {redeemedCode && (
-        <div className="rounded-lg border border-reward bg-reward/20 p-4">
-          <p className="text-sm font-medium text-reward-foreground">
-            Voucher issued! Use this code to connect:
-          </p>
-          <p className="mt-1 font-mono text-2xl font-semibold text-reward-foreground">
-            {redeemedCode}
-          </p>
-        </div>
-      )}
+      {redeemedCode && <VoucherActions code={redeemedCode} />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {rules.map((rule) => {
