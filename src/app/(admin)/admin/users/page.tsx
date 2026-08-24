@@ -12,6 +12,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { AdminResetPasswordDialog } from "@/components/admin/admin-reset-password-dialog";
+
 const PAGE_SIZE = 100;
 
 export default async function AdminUsersPage({
@@ -44,7 +46,7 @@ export default async function AdminUsersPage({
       <div>
         <h1 className="text-2xl font-semibold">User Directory</h1>
         <p className="text-sm text-muted-foreground">
-          Search and review recycler accounts. Suspend/edit actions are coming soon.
+          Search and manage recycler accounts and perform admin-assisted password resets.
         </p>
       </div>
 
@@ -65,6 +67,7 @@ export default async function AdminUsersPage({
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Points</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -81,6 +84,9 @@ export default async function AdminUsersPage({
                       </Badge>
                     </TableCell>
                     <TableCell className="tabular-nums">{user.pointsBalance}</TableCell>
+                    <TableCell className="text-right">
+                      <AdminResetPasswordDialog user={user} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
