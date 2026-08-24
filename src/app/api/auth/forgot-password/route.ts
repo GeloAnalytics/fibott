@@ -6,6 +6,10 @@ import { sendPasswordResetEmail } from "@/lib/email";
 
 const schema = z.object({ email: z.string().email() });
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
@@ -13,10 +17,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  const email = normalizeEmail(parsed.data.email);
+  const user = await prisma.user.findUnique({ where: { email } });
   if (user) {
     const token = await createPasswordResetToken(user.id);
-    await sendPasswordResetEmail(parsed.data.email, token);
+    await sendPasswordResetEmail(email, token);
   }
 
   // Always return a generic response to avoid leaking whether the email is registered.

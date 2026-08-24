@@ -1,35 +1,51 @@
 # Fibott
 
-Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, starts a deposit session, the backend owns the session and reward logic, the ESP32-CAM captures the item, and approved deposits earn points that can be redeemed for time-limited MikroTik WiFi vouchers.
+Fibott is a mobile-first reverse vending kiosk platform. A user opens the app,
+starts a recycling session, the ESP32-CAM captures the deposited item, and
+accepted bottles/cans earn points that can be redeemed for time-limited
+MikroTik HotSpot vouchers.
 
-## Project layout
+## Current Source Of Truth
+
+- The web app, database, device APIs, wallet, admin pages, and voucher
+  generation flow are implemented.
+- Voucher delivery supports both direct MikroTik REST and outbound RouterOS
+  polling sync.
+- Production should prefer outbound RouterOS polling sync because it works
+  behind NAT/CGNAT and does not require public inbound access to the MikroTik.
+- Final QA currently has two open login issues:
+  - Google login can show `OAuthAccountNotLinked` for the tested account.
+  - MikroTik HotSpot voucher login can show `Web browser did not send challenge response`.
+- Do not modify the working voucher sync path while debugging those login issues.
+
+See [docs/STATUS.md](docs/STATUS.md) for the live QA checklist and
+[docs/SYSTEM.md](docs/SYSTEM.md) for the architecture reference.
+
+## Project Layout
 
 - `src/` - Next.js app, API routes, auth, business logic, Prisma client, and device APIs
 - `prisma/` - Prisma schema, migrations, seed scripts
-- `firmware/` - ESP32-CAM firmware (base servo-only build, plus a servo+buzzer variant) and a legacy controller-era sketch kept for migration support
-- `hardware/` - wiring notes, BOM, and provisioning guidance for the mobile-first baseline
-- `docs/` - system design, connectivity, status, ML classifier notes, and the operator's guide
-- `scripts/ml/` - training and dataset preparation pipeline for the classifier
+- `firmware/` - ESP32-CAM firmware variants
+- `hardware/` - wiring notes, BOM, and provisioning guidance
+- `infra/` - MikroTik RouterOS scripts and direct REST test utility
+- `docs/` - system reference, current status, ML notes, and operator guide
+- `scripts/ml/` - classifier dataset and training pipeline
+- `models/` - trained classifier head artifacts
 
-## Key architecture
+## Key Architecture
 
-- `ESP32_CAM` (ESP32-CAM-MB) is the active kiosk board in the baseline design
-- The mobile app starts the deposit session
-- Backend uses Prisma + Neon Serverless Postgres for users, sessions, deposits, points, and vouchers
-- Classifier is TensorFlow.js + MobileNet, with a fine-tuneable head stored in `models/bottle-can-head/weights.json`
-- MikroTik integration is fully implemented in `src/lib/mikrotik-client.ts` via direct REST API — set `MIKROTIK_*` env vars and run `npm run test:mikrotik` to verify
+- `ESP32_CAM` is the active kiosk board in the baseline design.
+- The mobile app starts deposit sessions and displays points/vouchers.
+- Prisma + Neon Serverless Postgres store users, sessions, deposits, points, and vouchers.
+- NextAuth supports credentials and Google OAuth.
+- Voucher redemption first attempts direct MikroTik REST when configured and reachable.
+- On direct REST network failures, the app queues a `PENDING` voucher for outbound RouterOS sync.
+- RouterOS outbound sync polls `GET /api/mikrotik/sync`, creates the HotSpot user locally, and confirms the voucher as `ISSUED`.
+- The ML classifier uses TensorFlow.js + MobileNet with an optional fine-tuned head in `models/bottle-can-head/weights.json`.
 
-## Current status (~98% complete)
+## Getting Started
 
-- Full application stack working: auth, deposits, wallet, admin portal, voucher redemption.
-- Open Hotspot AP & Google OAuth Walled Garden wildcard rules configured on MikroTik.
-- MikroTik RouterOS REST integration verified (`npm run test:mikrotik`).
-- Support for mock vouchers (`MIKROTIK_HOST="mock"` or `ALLOW_MOCK_VOUCHER="true"`) for offline development/testing without physical router hardware.
-- ML training pipeline complete.
-
-## Getting started
-
-1. Install dependencies
+1. Install dependencies:
 
 ```bash
 npm install
@@ -48,24 +64,31 @@ npx prisma migrate dev
 npx prisma db seed
 ```
 
-4. Set environment variables in `.env.local`
+4. Set environment variables in `.env.local`.
 
-Required:
+Required app variables:
+
 - `DATABASE_URL`
 - `NEXTAUTH_SECRET`
 - `NEXTAUTH_URL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
 
-MikroTik Router Configuration:
-- `MIKROTIK_HOST` (e.g. `192.168.88.1`, DDNS hostname for production e.g. `hm20b2ta8p0.sn.mynetname.net`, or `"mock"` for offline testing)
-- `MIKROTIK_USER` (default: `admin`)
+MikroTik variables:
+
+- `MIKROTIK_HOST` - router IP/DDNS for direct REST, or `mock` for offline voucher testing
+- `MIKROTIK_USER`
 - `MIKROTIK_PASSWORD`
-- `MIKROTIK_HOTSPOT_PROFILE` (default: `1hour`)
-- `MIKROTIK_PROTOCOL` (default: `https`)
-- `MIKROTIK_PORT` (default: `443`)
-- `MIKROTIK_INSECURE_TLS` (default: `true`)
-*Note: If the MikroTik router is behind an upstream router (e.g. TP-Link), add a port forward on the TP-Link for TCP 443 → MikroTik WAN IP (e.g. 192.168.1.80:443).*
+- `MIKROTIK_HOTSPOT_PROFILE` - usually `1hour`
+- `MIKROTIK_PROTOCOL` - `http` locally or `https` in production
+- `MIKROTIK_PORT` - `80` locally or `443` in production
+- `MIKROTIK_INSECURE_TLS` - `true` when using self-signed router TLS
+- `MIKROTIK_SYNC_KEY` - shared secret for outbound RouterOS polling
+- `ALLOW_MOCK_VOUCHER` - optional local testing shortcut
 
-5. Run the app
+Do not commit real credentials, database URLs, OAuth secrets, or sync keys.
+
+5. Run the app:
 
 ```bash
 npm run dev
@@ -73,29 +96,22 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-## Firmware and device provisioning
-
-- `firmware/esp32-cam/` - active ESP32-CAM sketch (servo only) and camera-side config
-- `firmware/esp32-cam-buzzer/` - same sketch, for kiosks with audible buzzer feedback (GPIO14)
-
-## ML training
-
-- `npm run ml:setup` - prepare ML data folders
-- `npm run ml:import:taco -- --annotations path/to/annotations.json` - import from the TACO dataset
-- `npm run ml:train` - train the fine-tuned model head
-
-## Docs
-
-- `docs/SYSTEM.md` - full system architecture, REST API integration, hardware, firmware, ML classifier, and environment variables
-- `docs/STATUS.md` - current completion state and action plan
-- `docs/ml.md` - ML classifier technical details
-- `docs/CLIENT-GUIDE.md` - plain-language operator's guide: pre-launch checklist, daily operation, troubleshooting
-
-## Useful commands
+## Useful Commands
 
 - `npm run dev` - start Next.js in development mode
 - `npm run build` - build the app
 - `npm run lint` - run ESLint
-- `npm run test:mikrotik` - test direct MikroTik connection and create a sample voucher
+- `npx tsc --noEmit` - run TypeScript checks
+- `npm run test:mikrotik` - test direct MikroTik REST and create a sample HotSpot user
 - `npx prisma migrate dev` - run migrations and regenerate the client
 - `npx prisma db seed` - seed initial reward/voucher rules
+
+## Final QA Focus
+
+1. Fix or confirm the Google OAuth issue for `urrizaangelo0719@gmail.com`.
+2. Fix the MikroTik HotSpot CHAP challenge-response login error on the router.
+3. After voucher login works, retest automatic captive portal notification behavior.
+
+The voucher generation, pending queue, outbound RouterOS sync, HotSpot user
+creation, and confirmation flow are working and should remain frozen unless a
+new failure directly implicates them.

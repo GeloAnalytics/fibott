@@ -18,6 +18,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: "Incorrect email or password.",
   EMAIL_NOT_VERIFIED: "Please verify your email before signing in.",
   ACCOUNT_SUSPENDED: "This account has been suspended. Contact support.",
+  OAuthAccountNotLinked:
+    "This Google account is not linked to the Fibott account for that email yet. Try signing in with email/password first, or use a different Google account.",
 };
 
 export function LoginForm() {
@@ -40,7 +42,7 @@ export function LoginForm() {
     setServerError(null);
     setSubmitting(true);
     await signIn("credentials", {
-      email: values.email,
+      email: values.email.trim().toLowerCase(),
       password: values.password,
       callbackUrl: "/",
     });

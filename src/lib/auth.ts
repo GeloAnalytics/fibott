@@ -1,6 +1,7 @@
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import type { GoogleProfile } from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
@@ -16,6 +17,10 @@ class AccountSuspendedError extends CredentialsSignin {
 
 class InvalidCredentialsError extends CredentialsSignin {
   code = "INVALID_CREDENTIALS";
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 export const {
@@ -37,9 +42,11 @@ export const {
         password: { label: "Password", type: "password" },
       },
       authorize: async (credentials) => {
-        const email = credentials?.email as string | undefined;
+        const rawEmail = credentials?.email as string | undefined;
         const password = credentials?.password as string | undefined;
-        if (!email || !password) throw new InvalidCredentialsError();
+        if (!rawEmail || !password) throw new InvalidCredentialsError();
+
+        const email = normalizeEmail(rawEmail);
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user || !user.passwordHash) throw new InvalidCredentialsError();
@@ -64,6 +71,17 @@ export const {
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
+      profile(profile: GoogleProfile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email ? normalizeEmail(profile.email) : null,
+          image: profile.picture,
+          emailVerified: profile.email_verified ? new Date() : null,
+          role: "USER",
+          status: "ACTIVE",
+        };
+      },
     }),
   ],
   events: {
@@ -78,9 +96,15 @@ export const {
     },
   },
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider === "google" && user.email) {
-        const dbUser = await prisma.user.findUnique({ where: { email: user.email } });
+        if ((profile as GoogleProfile | undefined)?.email_verified === false) {
+          return false;
+        }
+
+        const dbUser = await prisma.user.findUnique({
+          where: { email: normalizeEmail(user.email) },
+        });
         if (dbUser?.status === "SUSPENDED") return false;
       }
       return true;
