@@ -17,6 +17,7 @@ Reference: [SYSTEM.md](SYSTEM.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUI
 | Database | Code verified | Prisma and Neon are used through `src/lib/prisma.ts`; points and vouchers use database transactions. |
 | Recycling session API | Code verified | One active kiosk session is enforced and sessions expire automatically. |
 | ESP32 scan/image intake | Code verified, hardware retest needed | Device routes require `x-device-api-key`, classify deposits, and call the shared deposit processor. Physical ESP32 upload should be retested on the kiosk. |
+| ESP32 Firmware | Code verified | Base, 2-pin buzzer (active/passive PWM), 3-pin buzzer module (active-HIGH/LOW), and kiosk-controller variants structured and documented. |
 | Points accumulation | Code verified | Accepted deposits call `awardPoints`; spending uses atomic `updateMany` balance checks; failed voucher issuance refunds points when appropriate. |
 | Voucher redemption | Code verified | Redeem flow creates a voucher, spends points, tries direct MikroTik REST, and leaves vouchers pending for outbound sync on network fallback. |
 | MikroTik outbound sync | Code verified, router retest needed | `/api/mikrotik/sync` requires `MIKROTIK_SYNC_KEY`, returns one pending voucher, and marks confirmed vouchers as issued. Router scheduler must be active. |

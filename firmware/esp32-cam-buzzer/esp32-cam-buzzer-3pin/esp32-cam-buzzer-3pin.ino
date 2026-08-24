@@ -1,38 +1,22 @@
 /*
- * Fibott — ESP32-CAM firmware (servo + buzzer variant)
+ * Fibott — ESP32-CAM Firmware (3-Pin Buzzer Module Variant)
  *
  * Board:    AI Thinker ESP32-CAM  (Arduino IDE → Tools → Board)
  * PSRAM:    Tools → PSRAM → "OPI PSRAM"  (required)
- * Flash:    micro-USB via the onboard CH340C — no FTDI adapter needed
+ * Flash:    micro-USB via onboard CH340C or FTDI programmer
  *
- * Libraries (Sketch → Include Library → Manage Libraries):
- *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
+ * Required Libraries:
+ *   - ArduinoJson ≥ 7.0 (by Benoit Blanchon)
  *
- * Identical state machine and network protocol to firmware/esp32-cam/esp32-cam.ino.
- * Use this sketch instead when the kiosk has an active buzzer wired in addition
- * to the gate servo, for audible accept/reject/error feedback alongside the
- * gate action and status LED.
+ * Hardware Wiring (3-Pin Buzzer Module Breakout Board):
+ *   - Module VCC Pin                   → 5V or 3.3V Pin
+ *   - Module GND Pin                   → GND Pin
+ *   - Module SIG / I/O / S Signal Pin  → GPIO14
+ *   - Servo Signal Line                → GPIO13
+ *   - Status LED                       → GPIO33 (onboard red LED)
  *
- * State machine:
- *   IDLE → poll /api/kiosk/session → if active: READY
- *   READY → capture image → PROCESSING
- *   PROCESSING → upload image → SUCCESS or ERROR
- *   SUCCESS → open gate → wait GATE_OPEN_MS → IDLE
- *   ERROR → wait RETRY_DELAY_MS → READY (retry) or IDLE (expired)
- *
- * ── GPIO assignments ───────────────────────────────────────────────────────
- *  GPIO13  Servo signal (safe, not a strapping pin)
- *  GPIO14  Buzzer signal, active-HIGH (safe, not used by camera/PSRAM/servo)
- *  GPIO33  Onboard red status LED, active-LOW
- *
- * ── Buzzer feedback ─────────────────────────────────────────────────────────
- *  1 short beep   Boot complete, entering IDLE
- *  1 short beep   READY — prompting user to place item
- *  1 long beep    Deposit ACCEPTed (plays while the gate opens)
- *  3 short beeps  Deposit REJECTed
- *  1 long beep    Upload/network error
- *
- * See docs/SYSTEM.md for the full architecture.
+ * Supports both Active Buzzer Modules (transistor driver, Active-HIGH or Active-LOW logic)
+ * and Passive 3-Pin Modules (KY-006 style). Configure logic level in config.h.
  */
 
 #include "config.h"
@@ -42,7 +26,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
-// ── OV2640 pin map (AI-Thinker ESP32-CAM) ────────────────────────────────────
+// ── OV2640 Pin Mapping (AI-Thinker ESP32-CAM) ───────────────────────────────
 #define CAM_PWDN   32
 #define CAM_RESET  -1
 #define CAM_XCLK    0
@@ -60,14 +44,12 @@
 #define CAM_HREF   23
 #define CAM_PCLK   22
 
-// ── FSM states ────────────────────────────────────────────────────────────────
+// ── Kiosk Finite State Machine ────────────────────────────────────────────────
 enum KioskState { STATE_IDLE, STATE_READY, STATE_PROCESSING, STATE_SUCCESS, STATE_ERROR };
 static KioskState state = STATE_IDLE;
-
-// Persists across the READY/PROCESSING/SUCCESS/ERROR cycle for one session
 static char activeSessionId[128] = "";
 
-// ── Servo (esp-idf ledc, TIMER_0/CHANNEL_0 — camera uses TIMER_2/CHANNEL_2) ─
+// ── Servo Control (LEDC Timer 0 / Channel 0) ─────────────────────────────────
 static void servoSetup() {
   ledc_timer_config_t tc = {};
   tc.speed_mode      = LEDC_LOW_SPEED_MODE;
@@ -97,20 +79,76 @@ static void servoWrite(uint32_t us) {
 static void gateClose() { servoWrite(SERVO_CLOSED_US); }
 static void gateOpen()  { servoWrite(SERVO_OPEN_US);   }
 
-// ── Buzzer (active buzzer, HIGH = on) ────────────────────────────────────────
-static void beep(int n, int onMs = 200, int gapMs = 150) {
+// ── 3-Pin Buzzer Module Driver ────────────────────────────────────────────────
+#if MODULE_TYPE == MODULE_TYPE_PASSIVE
+static void buzzerPwmSetup() {
+  ledc_timer_config_t tc = {};
+  tc.speed_mode      = LEDC_LOW_SPEED_MODE;
+  tc.duty_resolution = LEDC_TIMER_10_BIT;
+  tc.timer_num       = LEDC_TIMER_1;
+  tc.freq_hz         = 2000;
+  tc.clk_cfg         = LEDC_AUTO_CLK;
+  ledc_timer_config(&tc);
+
+  ledc_channel_config_t cc = {};
+  cc.gpio_num   = PIN_BUZZER_SIG;
+  cc.speed_mode = LEDC_LOW_SPEED_MODE;
+  cc.channel    = LEDC_CHANNEL_1;
+  cc.intr_type  = LEDC_INTR_DISABLE;
+  cc.timer_sel  = LEDC_TIMER_1;
+  cc.duty       = 0;
+  cc.hpoint     = 0;
+  ledc_channel_config(&cc);
+}
+
+static void buzzerTone(uint32_t freqHz) {
+  if (freqHz == 0) {
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+    return;
+  }
+  ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1, freqHz);
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 512); // 50% duty
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+}
+
+static void buzzerNoTone() {
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+}
+#endif
+
+static void buzzerSetup() {
+  pinMode(PIN_BUZZER_SIG, OUTPUT);
+#if MODULE_TYPE == MODULE_TYPE_PASSIVE
+  buzzerPwmSetup();
+  buzzerNoTone();
+#else
+  // Active module setup considering configured polarity
+  digitalWrite(PIN_BUZZER_SIG, (BUZZER_ACTIVE_LOGIC == HIGH) ? LOW : HIGH);
+#endif
+}
+
+static void playBeep(int n, int onMs = 200, int gapMs = 150, uint32_t freqHz = TONE_BOOT_HZ) {
   for (int i = 0; i < n; i++) {
-    digitalWrite(PIN_BUZZER, HIGH); delay(onMs);
-    digitalWrite(PIN_BUZZER, LOW);
+#if MODULE_TYPE == MODULE_TYPE_PASSIVE
+    buzzerTone(freqHz);
+    delay(onMs);
+    buzzerNoTone();
+#else
+    digitalWrite(PIN_BUZZER_SIG, BUZZER_ACTIVE_LOGIC);
+    delay(onMs);
+    digitalWrite(PIN_BUZZER_SIG, (BUZZER_ACTIVE_LOGIC == HIGH) ? LOW : HIGH);
+#endif
     if (i < n - 1) delay(gapMs);
   }
 }
 
-// ── Status LED (GPIO33, active-LOW) ──────────────────────────────────────────
+// ── Onboard Status LED (GPIO33, Active-LOW) ──────────────────────────────────
 static void ledOn()  { digitalWrite(PIN_LED_STATUS, LOW);  }
 static void ledOff() { digitalWrite(PIN_LED_STATUS, HIGH); }
 
-// ── Camera init ───────────────────────────────────────────────────────────────
+// ── Camera Initialization ─────────────────────────────────────────────────────
 static bool cameraInit() {
   camera_config_t cfg = {};
   cfg.ledc_channel = LEDC_CHANNEL_2;
@@ -133,7 +171,7 @@ static bool cameraInit() {
   cfg.pin_reset    = CAM_RESET;
   cfg.xclk_freq_hz = 20000000;
   cfg.pixel_format = PIXFORMAT_JPEG;
-  cfg.frame_size   = FRAMESIZE_VGA;   // 640×480
+  cfg.frame_size   = FRAMESIZE_VGA;
   cfg.jpeg_quality = 12;
   cfg.fb_count     = 1;
   cfg.fb_location  = CAMERA_FB_IN_PSRAM;
@@ -147,7 +185,7 @@ static bool cameraInit() {
   return true;
 }
 
-// ── Telemetry Logging ────────────────────────────────────────────────────────
+// ── Telemetry Logging ─────────────────────────────────────────────────────────
 static void sendLog(const char* level, const char* tag, const char* message, const char* details = nullptr) {
   if (WiFi.status() != WL_CONNECTED) return;
   WiFiClientSecure client;
@@ -175,15 +213,14 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   client.stop();
 }
 
-// ── Session polling ───────────────────────────────────────────────────────────
-// Returns true and populates outSessionId if an active session is found.
+// ── Session Polling ───────────────────────────────────────────────────────────
 static bool pollSession(char *outSessionId, size_t maxLen) {
   WiFiClientSecure client;
   client.setInsecure();
   client.setTimeout(BACKEND_TIMEOUT_S);
 
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-    Serial.println("[poll] connect failed");
+    Serial.println("[poll] Connect failed");
     return false;
   }
 
@@ -193,8 +230,7 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
   client.printf("Connection: close\r\n\r\n");
   client.flush();
 
-  // Consume status line (we skip status code check — JSON content is the authority)
-  client.readStringUntil('\n');
+  client.readStringUntil('\n'); // Consume status line
 
   while (client.connected()) {
     if (client.readStringUntil('\n') == "\r") break;
@@ -202,20 +238,12 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
   String body = client.readString();
   client.stop();
 
-  // Strip chunked-encoding prefix (e.g. "83\r\n{...}\r\n0")
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart)
-                    ? body.substring(jStart, jEnd + 1)
-                    : body;
-
-  Serial.printf("[poll] body=%s\n", jsonBody.c_str());
+  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
 
   JsonDocument doc;
-  if (deserializeJson(doc, jsonBody) != DeserializationError::Ok) {
-    Serial.println("[poll] JSON parse error");
-    return false;
-  }
+  if (deserializeJson(doc, jsonBody) != DeserializationError::Ok) return false;
   if (!doc["active"].as<bool>()) return false;
 
   const char *id = doc["sessionId"].as<const char *>();
@@ -225,17 +253,13 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
   return true;
 }
 
-// ── Image upload ──────────────────────────────────────────────────────────────
-// Returns "ACCEPT", "REJECT", or "" on any error.
+// ── Deposit Image Upload ──────────────────────────────────────────────────────
 static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   WiFiClientSecure client;
   client.setInsecure();
   client.setTimeout(BACKEND_TIMEOUT_S);
 
-  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-    Serial.println("[http] connect failed");
-    return "";
-  }
+  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) return "";
 
   const char *boundary = "FibottBoundary42";
 
@@ -243,8 +267,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   if (sessionId && strlen(sessionId) > 0) {
     sessionPart  = "--"; sessionPart += boundary; sessionPart += "\r\n";
     sessionPart += "Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n";
-    sessionPart += sessionId;
-    sessionPart += "\r\n";
+    sessionPart += sessionId; sessionPart += "\r\n";
   }
 
   String imagePart;
@@ -252,9 +275,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   imagePart += "Content-Disposition: form-data; name=\"image\"; filename=\"frame.jpg\"\r\n";
   imagePart += "Content-Type: image/jpeg\r\n\r\n";
 
-  String footer = "\r\n--";
-  footer += boundary;
-  footer += "--\r\n";
+  String footer = "\r\n--"; footer += boundary; footer += "--\r\n";
 
   size_t contentLen = sessionPart.length() + imagePart.length() + fb->len + footer.length();
 
@@ -268,12 +289,13 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   if (sessionPart.length()) client.print(sessionPart);
   client.print(imagePart);
   const size_t CHUNK = 4096;
-  for (size_t off = 0; off < fb->len; off += CHUNK)
+  for (size_t off = 0; off < fb->len; off += CHUNK) {
     client.write(fb->buf + off, min(CHUNK, fb->len - off));
+  }
   client.print(footer);
   client.flush();
 
-  client.readStringUntil('\n'); // consume status line
+  client.readStringUntil('\n');
 
   while (client.connected()) {
     if (client.readStringUntil('\n') == "\r") break;
@@ -281,65 +303,56 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   String body = client.readString();
   client.stop();
 
-  // Strip chunked-encoding prefix
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart)
-                    ? body.substring(jStart, jEnd + 1)
-                    : body;
-
-  Serial.printf("[http] %s\n", jsonBody.c_str());
+  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
 
   JsonDocument doc;
   if (deserializeJson(doc, jsonBody) != DeserializationError::Ok) return "";
   return doc["servoAction"].as<String>();
 }
 
-// ── WiFi watchdog ─────────────────────────────────────────────────────────────
+// ── Wi-Fi Reconnection Watchdog ───────────────────────────────────────────────
 static void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
-  Serial.print("[wifi] reconnecting");
+  Serial.print("[wifi] Reconnecting");
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   unsigned long deadline = millis() + 15000;
   while (WiFi.status() != WL_CONNECTED && millis() < deadline) {
-    delay(500);
-    Serial.print(".");
+    delay(500); Serial.print(".");
   }
-  Serial.println(WiFi.status() == WL_CONNECTED ? " ok" : " failed");
+  Serial.println(WiFi.status() == WL_CONNECTED ? " OK" : " Failed");
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n[boot] Fibott ESP32-CAM (servo + buzzer)");
+  Serial.println("\n[boot] Fibott ESP32-CAM (3-Pin Buzzer Module Firmware)");
 
   pinMode(PIN_LED_STATUS, OUTPUT);
   ledOff();
 
-  pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_BUZZER, LOW);
-
+  buzzerSetup();
   servoSetup();
   gateClose();
 
   if (!cameraInit()) {
-    Serial.println("[boot] FATAL: camera init failed");
+    Serial.println("[boot] FATAL: Camera initialization failed");
     while (true) { ledOn(); delay(200); ledOff(); delay(200); }
   }
 
-  Serial.printf("[wifi] connecting to %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.printf("\n[wifi] %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("\n[wifi] Connected IP: %s\n", WiFi.localIP().toString().c_str());
   sendLog("INFO", "WIFI", "WiFi connected", WiFi.localIP().toString().c_str());
 
   ledOn(); delay(200); ledOff();
-  beep(1, 80);  // boot complete
-  Serial.println("[boot] ready — entering IDLE");
-  sendLog("INFO", "BOOT", "Fibott ESP32-CAM (Buzzer Variant) online and ready");
+  playBeep(1, 80, 150, TONE_BOOT_HZ); // Boot beep
+  Serial.println("[boot] System ready");
+  sendLog("INFO", "BOOT", "Fibott ESP32-CAM (3-Pin Buzzer Module) online");
 }
 
-// ── Main loop (FSM) ───────────────────────────────────────────────────────────
+// ── Main Loop (Finite State Machine) ──────────────────────────────────────────
 void loop() {
   ensureWifi();
 
@@ -352,18 +365,17 @@ void loop() {
         break;
       }
       strncpy(activeSessionId, sessionId, sizeof(activeSessionId));
-      Serial.printf("[fsm] IDLE → READY  session=%s\n", activeSessionId);
+      Serial.printf("[fsm] IDLE → READY session=%s\n", activeSessionId);
       state = STATE_READY;
       break;
     }
 
     case STATE_READY: {
-      Serial.println("[fsm] READY — waiting for item");
-      beep(1, 80);  // prompt user to place item
-      // Blink rapidly to signal "place item now", then hold on before capture
+      Serial.println("[fsm] READY — user prompt");
+      playBeep(1, 100, 150, TONE_READY_HZ);
       for (int i = 0; i < 6; i++) { ledOn(); delay(200); ledOff(); delay(200); }
-      delay(2000);   // 2 s steady pause — user places item in frame
-      Serial.println("[fsm] READY — capturing image");
+      delay(2000);
+      Serial.println("[fsm] Capturing image...");
       ledOn();
       state = STATE_PROCESSING;
       break;
@@ -372,60 +384,48 @@ void loop() {
     case STATE_PROCESSING: {
       camera_fb_t *fb = esp_camera_fb_get();
       if (!fb) {
-        Serial.println("[cam] capture failed — retrying");
+        Serial.println("[cam] Capture failed, retrying");
         ledOff();
         delay(POLL_INTERVAL_MS);
-        // Stay in PROCESSING to retry capture
         break;
       }
-      Serial.printf("[cam] %u bytes\n", fb->len);
 
       String action = uploadImage(fb, activeSessionId);
       esp_camera_fb_return(fb);
       ledOff();
 
       if (action == "ACCEPT") {
-        Serial.println("[fsm] PROCESSING → SUCCESS");
+        Serial.println("[fsm] Deposit ACCEPTED");
         state = STATE_SUCCESS;
       } else if (action == "REJECT") {
-        Serial.println("[fsm] PROCESSING → ERROR (rejected)");
-        beep(3);  // three beeps = rejected
+        Serial.println("[fsm] Deposit REJECTED");
+        playBeep(3, 120, 100, TONE_REJECT_HZ); // 3 rapid rejection beeps
         state = STATE_ERROR;
       } else {
-        // Upload failed — poll to see if session is still valid before retrying
-        Serial.println("[fsm] PROCESSING → ERROR (upload failed)");
-        beep(1, 500);  // one long beep = error
+        Serial.println("[fsm] Upload error");
+        playBeep(1, 500, 150, TONE_ERROR_HZ); // 1 long error tone
         state = STATE_ERROR;
       }
       break;
     }
 
     case STATE_SUCCESS: {
-      Serial.println("[gate] ACCEPT — opening");
-      beep(1, 300);  // one long beep = success
+      playBeep(1, 300, 150, TONE_ACCEPT_HZ); // Accept tone
       gateOpen();
       delay(GATE_OPEN_MS);
       gateClose();
-      Serial.println("[gate] closed");
       activeSessionId[0] = '\0';
-      Serial.println("[fsm] SUCCESS → IDLE");
       state = STATE_IDLE;
       break;
     }
 
     case STATE_ERROR: {
-      Serial.println("[fsm] ERROR — checking session");
-      // Check if the session is still active; if yes, go back to READY for a retry
       char sessionId[128] = "";
-      bool stillActive = pollSession(sessionId, sizeof(sessionId))
-                         && strcmp(sessionId, activeSessionId) == 0;
-
-      if (stillActive) {
-        Serial.println("[fsm] ERROR → READY (retry)");
+      bool active = pollSession(sessionId, sizeof(sessionId)) && strcmp(sessionId, activeSessionId) == 0;
+      if (active) {
         delay(RETRY_DELAY_MS);
         state = STATE_READY;
       } else {
-        Serial.println("[fsm] ERROR → IDLE (session gone)");
         activeSessionId[0] = '\0';
         state = STATE_IDLE;
       }
