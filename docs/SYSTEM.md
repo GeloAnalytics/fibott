@@ -55,6 +55,41 @@ Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The 
 
 ---
 
+## Firmware Specifications
+
+Fibott provides four production firmware projects under `firmware/`:
+
+| Firmware Folder | Target Hardware | Audio Driver | Pin Mapping & Description |
+|---|---|---|---|
+| [`firmware/esp32-cam`](../firmware/esp32-cam/) | Standard ESP32-CAM | Visual (LED) | Servo on **GPIO13**, Status LED on **GPIO33**. Base image capture + servo gate firmware. |
+| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/) | ESP32-CAM + 2-Pin Buzzer | Active / Passive PWM | Servo on **GPIO13**, Buzzer `(+)` on **GPIO14**, `(-)` to **GND**, Status LED on **GPIO33**. Active digital pulses or LEDC PWM hardware tone generator. |
+| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-3pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-3pin/) | ESP32-CAM + 3-Pin Buzzer Module | Transistor Driven | Servo on **GPIO13**, Buzzer `SIG` on **GPIO14**, `VCC` to **5V/3.3V**, `GND` to **GND**, Status LED on **GPIO33**. Supports Active-HIGH and Active-LOW transistor breakout modules. |
+| [`firmware/kiosk-controller`](../firmware/kiosk-controller/) | Standalone Controller / Secondary MCU | Multi-sensor | Microcontroller logic for auxiliary physical chute sensors and gate triggers. |
+
+### Audible Feedback Protocol (Buzzer Firmware)
+
+| State / Event | Beep Pattern | Frequency (Passive Mode) |
+|---|---|---|
+| **Boot Complete** | 1 short beep (80ms) | 2700 Hz |
+| **Session Active / Ready** | 1 prompt beep (100ms) + LED flash | 3000 Hz |
+| **Deposit Accepted** | 1 long tone (300ms) + Gate opens | 3500 Hz |
+| **Deposit Rejected** | 3 rapid beeps (120ms each) | 1800 Hz |
+| **Upload / Network Error** | 1 long warning tone (500ms) | 1200 Hz |
+
+---
+
+## Hardware Specifications
+
+- **Microcontroller:** AI-Thinker ESP32-CAM (with PSRAM enabled).
+- **Camera Module:** OV2640 JPEG camera module (VGA 640x480 capture).
+- **Gate Actuator:** SG90 / MG90S Micro Servo driven via ESP32 `ledc` PWM on **GPIO13**.
+- **Audible Alerts:** 
+  - 2-Pin active/passive piezo element connected between **GPIO14** and **GND**.
+  - OR 3-Pin active/passive breakout module (KY-012, HW-508, KY-006) powered by **5V/3.3V**, **GND**, and **GPIO14** (`SIG`).
+- **Power Supply:** 5V 2A+ DC supply to ESP32-CAM `5V` pin (camera & servo draw peak currents up to 1.5A during capture & motor turn).
+
+---
+
 ## Environment Variables
 
 | Variable | Purpose |
