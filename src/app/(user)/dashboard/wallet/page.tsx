@@ -49,18 +49,26 @@ export default async function WalletPage() {
   ]);
 
   const earned = transactions
-    .filter((t) => t.type === "EARN")
+    .filter(
+      (t) =>
+        t.type === "EARN" ||
+        (t.type === "ADJUSTMENT" && t.source === "ADMIN_ADJUSTMENT")
+    )
     .reduce((sum, t) => sum + t.amount, 0);
-  // ADJUSTMENT transactions are refunds for spends whose voucher issuance
+
+  // ADJUSTMENT transactions with source VOUCHER_REDEMPTION are refunds for spends whose voucher issuance
   // failed (see refundPoints in src/lib/points.ts) — net them out so a
   // failed-then-refunded redemption doesn't look like points were spent.
   const refunded = transactions
-    .filter((t) => t.type === "ADJUSTMENT")
+    .filter((t) => t.type === "ADJUSTMENT" && t.source === "VOUCHER_REDEMPTION")
     .reduce((sum, t) => sum + t.amount, 0);
-  const spent =
+
+  const spent = Math.max(
+    0,
     transactions
       .filter((t) => t.type === "SPEND")
-      .reduce((sum, t) => sum + t.amount, 0) - refunded;
+      .reduce((sum, t) => sum + t.amount, 0) - refunded
+  );
 
   return (
     <div className="space-y-8">
