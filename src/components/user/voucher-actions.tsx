@@ -155,7 +155,7 @@ export function VoucherActions({
               Connect your phone/laptop to the open <strong className="text-foreground">Fibott</strong> Wi-Fi network.
             </li>
             <li>
-              Click <strong className="text-foreground">"Use Voucher"</strong> above. It copies your code and opens the HotSpot login page.
+              Click <strong className="text-foreground">&quot;Use Voucher&quot;</strong> above. It copies your code and opens the HotSpot login page.
             </li>
             <li>
               Paste the code <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-foreground">{code}</code> into both the <strong className="text-foreground">Username</strong> and <strong className="text-foreground">Password</strong> fields, then click <strong className="text-foreground">Login</strong>.
