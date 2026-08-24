@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { formatPHT } from "@/lib/date-utils";
 
 const MATERIAL_LABEL: Record<string, string> = {
   PET_BOTTLE: "Plastic bottle",
@@ -53,7 +53,7 @@ export default async function HistoryPage() {
             <TableBody>
               {deposits.map((deposit) => (
                 <TableRow key={deposit.id}>
-                  <TableCell>{format(deposit.createdAt, "MMM d, yyyy h:mm a")}</TableCell>
+                  <TableCell>{formatPHT(deposit.createdAt)}</TableCell>
                   <TableCell>{MATERIAL_LABEL[deposit.materialType]}</TableCell>
                   <TableCell className="tabular-nums">{deposit.quantity}</TableCell>
                   <TableCell className="tabular-nums">{deposit.pointsAwarded}</TableCell>

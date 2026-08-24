@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { formatPHT } from "@/lib/date-utils";
 import { RedeemSection } from "./redeem-section";
 
 const VOUCHER_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
@@ -117,7 +117,7 @@ export default async function WalletPage() {
                     </TableCell>
                     <TableCell>
                       {voucher.issuedAt
-                        ? format(voucher.issuedAt, "MMM d, yyyy h:mm a")
+                        ? formatPHT(voucher.issuedAt)
                         : "—"}
                     </TableCell>
                   </TableRow>
@@ -147,7 +147,7 @@ export default async function WalletPage() {
               <TableBody>
                 {transactions.map((tx) => (
                   <TableRow key={tx.id}>
-                    <TableCell>{format(tx.createdAt, "MMM d, yyyy h:mm a")}</TableCell>
+                    <TableCell>{formatPHT(tx.createdAt)}</TableCell>
                     <TableCell>
                       <Badge variant={tx.type === "EARN" ? "default" : "secondary"}>
                         {tx.type}

@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { formatPHT } from "@/lib/date-utils";
 
 export default async function AdminAuditLogsPage() {
   const [logs, total] = await Promise.all([
@@ -45,7 +45,7 @@ export default async function AdminAuditLogsPage() {
               <TableBody>
                 {logs.map((log) => (
                   <TableRow key={log.id}>
-                    <TableCell>{format(log.createdAt, "MMM d, yyyy h:mm a")}</TableCell>
+                    <TableCell>{formatPHT(log.createdAt)}</TableCell>
                     <TableCell>{log.actor.name ?? log.actor.email}</TableCell>
                     <TableCell>{log.action.replace(/_/g, " ")}</TableCell>
                     <TableCell className="font-mono text-xs">

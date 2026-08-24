@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { formatPHT } from "@/lib/date-utils";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   ISSUED: "default",
@@ -69,7 +69,7 @@ export default async function AdminVouchersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {voucher.issuedAt ? format(voucher.issuedAt, "MMM d, yyyy h:mm a") : "—"}
+                      {voucher.issuedAt ? formatPHT(voucher.issuedAt) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

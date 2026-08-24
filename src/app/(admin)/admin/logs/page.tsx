@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { format } from "date-fns";
+import { formatLogTime, formatLogTimeDetailed } from "@/lib/date-utils";
 import {
   AlertTriangle,
   Cpu,
@@ -328,7 +328,7 @@ export default function AdminLogsPage() {
                   {logs.map((log) => (
                     <tr key={log.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-3 px-4 font-mono whitespace-nowrap text-muted-foreground">
-                        {format(new Date(log.createdAt), "MMM dd, HH:mm:ss")}
+                        {formatLogTime(log.createdAt)}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">{getLevelBadge(log.level)}</td>
                       <td className="py-3 px-4 whitespace-nowrap">{getSourceBadge(log.source)}</td>
@@ -406,7 +406,7 @@ export default function AdminLogsPage() {
               {selectedLog && getLevelBadge(selectedLog.level)}
               {selectedLog && getSourceBadge(selectedLog.source)}
               <span className="font-mono text-muted-foreground">
-                {selectedLog && format(new Date(selectedLog.createdAt), "yyyy-MM-dd HH:mm:ss.SSS")}
+                {selectedLog && formatLogTimeDetailed(selectedLog.createdAt)}
               </span>
             </div>
 
