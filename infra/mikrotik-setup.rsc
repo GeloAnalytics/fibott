@@ -126,7 +126,7 @@
 :do {
   :local fetchUrl \"\$appUrl\?key=\$syncKey\"
   :if ([:len \$syncKey] = 0) do={ :set fetchUrl \$appUrl }
-  :local res [/tool fetch url=\$fetchUrl mode=https output=user as-value]
+  :local res [/tool fetch url=\$fetchUrl as-value output=user]
   :local data (\$res->\"data\")
   :if (\$data ~ \"^PENDING:\") do={
     :local firstColon [:find \$data \":\" 0]
