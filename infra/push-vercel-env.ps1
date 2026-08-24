@@ -18,6 +18,7 @@ $MIKROTIK_HOTSPOT_PROFILE  = "1hour"
 $MIKROTIK_PROTOCOL         = "https"
 $MIKROTIK_PORT             = "443"
 $MIKROTIK_INSECURE_TLS     = "true"
+$MIKROTIK_SYNC_KEY         = "<random-64-character-sync-key>"
 
 $env_pairs = @(
     @{ name = "MIKROTIK_HOST";             value = $MIKROTIK_HOST },
@@ -26,7 +27,8 @@ $env_pairs = @(
     @{ name = "MIKROTIK_HOTSPOT_PROFILE";  value = $MIKROTIK_HOTSPOT_PROFILE },
     @{ name = "MIKROTIK_PROTOCOL";         value = $MIKROTIK_PROTOCOL },
     @{ name = "MIKROTIK_PORT";             value = $MIKROTIK_PORT },
-    @{ name = "MIKROTIK_INSECURE_TLS";     value = $MIKROTIK_INSECURE_TLS }
+    @{ name = "MIKROTIK_INSECURE_TLS";     value = $MIKROTIK_INSECURE_TLS },
+    @{ name = "MIKROTIK_SYNC_KEY";         value = $MIKROTIK_SYNC_KEY }
 )
 
 foreach ($pair in $env_pairs) {
