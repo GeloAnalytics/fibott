@@ -158,15 +158,24 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html,
   body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
+    @apply bg-background text-foreground font-sans;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
   h1,
   h2,
   h3 {
     text-wrap: balance;
+  }
+
+  /* Prevent iOS Safari & mobile WebView auto-zoom on input focus */
+  @media (max-width: 768px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 }
