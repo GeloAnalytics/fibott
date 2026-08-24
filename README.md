@@ -4,77 +4,70 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 
 ---
 
-## 🚀 Status
+## Status
 
-- **Web App & Production**: Deployed and live at [`https://fibott.vercel.app`](https://fibott.vercel.app).
-- **Authentication**: NextAuth with Credentials and Google OAuth (`allowDangerousEmailAccountLinking: true`).
-- **Database**: Prisma ORM + Neon Serverless PostgreSQL.
-- **MicroTik HotSpot Integration**: Direct REST API + Outbound RouterOS Polling Sync (`GET /api/mikrotik/sync`).
-- **Voucher Claiming**: Interactive **Use Voucher** and **Copy Code** action buttons with step-by-step connection guide.
-- **Timezone**: All application logs, audit trails, and transaction ledgers formatted in **Philippines Time (Asia/Manila GMT+8)**.
-- **Mobile Responsiveness**: Viewport scale locked and mobile input font-size enforced (min 16px) to eliminate iOS Safari auto-zooming.
-
-See [docs/STATUS.md](docs/STATUS.md) for full status verification and [docs/SYSTEM.md](docs/SYSTEM.md) for technical architecture details.
-
----
-
-## 📁 Project Layout
-
-- `src/` — Next.js app, API routes, auth, business logic, Prisma client, and device APIs
-- `prisma/` — Prisma schema, migrations, seed scripts
-- `firmware/` — ESP32-CAM firmware variants (`esp32-cam` and `esp32-cam-buzzer`)
-- `infra/` — MikroTik RouterOS setup scripts (`mikrotik-setup.rsc`, `fibott-sync.rsc`) and direct REST test utility
-- `docs/` — System reference, status, ML notes, and operator guide
-- `scripts/` — Classifier dataset training pipeline and admin utilities
+- **Web app**: Next.js App Router app deployed at `https://fibott.vercel.app`.
+- **Authentication**: NextAuth with Credentials and Google OAuth. Emails are normalized before credential login, registration, password reset, and Google profile mapping.
+- **Database**: Prisma ORM with Neon Serverless PostgreSQL.
+- **Device intake**: ESP32-CAM posts authenticated scans/images to the device APIs.
+- **Points**: Earn, spend, and refund flows use database transactions and atomic balance updates.
+- **Vouchers**: Redeeming points creates a voucher, attempts direct MikroTik REST when available, and falls back to outbound RouterOS polling sync.
+- **MikroTik sync**: RouterOS polls `GET /api/mikrotik/sync` using `MIKROTIK_SYNC_KEY`, creates HotSpot users, then confirms issued vouchers.
+- **Operator docs**: See [docs/STATUS.md](docs/STATUS.md), [docs/SYSTEM.md](docs/SYSTEM.md), and [docs/CLIENT-GUIDE.md](docs/CLIENT-GUIDE.md).
 
 ---
 
-## ⚙️ Key Architecture
+## Project Layout
 
-- **ESP32-CAM**: Active kiosk controller board running FSM (IDLE → READY → PROCESSING → SUCCESS/ERROR).
-- **Mobile Web App**: Manages recycling sessions, displays real-time points, and issues Wi-Fi vouchers.
-- **Outbound RouterOS Sync**: MikroTik router polls `GET /api/mikrotik/sync` every 3 seconds to fetch pending vouchers, create HotSpot users, and confirm activation — zero open ports required.
-- **ML Classifier**: TensorFlow.js + MobileNetV2 with fine-tuned head (`models/bottle-can-head/weights.json`).
+- `src/` - Next.js app, API routes, auth, business logic, Prisma client, and device APIs.
+- `prisma/` - Prisma schema, migrations, and seed script.
+- `firmware/` - ESP32-CAM firmware variants.
+- `infra/` - MikroTik RouterOS setup scripts and direct REST test utility.
+- `docs/` - System reference, status, ML notes, and operator guide.
+- `scripts/` - Classifier dataset/training utilities and admin scripts.
 
 ---
 
-## 💻 Getting Started
+## Getting Started
 
-1. **Install dependencies**:
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-2. **Generate Prisma client**:
+2. Generate the Prisma client:
    ```bash
    npm run postinstall
    ```
 
-3. **Set environment variables in `.env.local`**:
-   - `DATABASE_URL`
-   - `NEXTAUTH_SECRET`
-   - `NEXTAUTH_URL`
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
-   - `MIKROTIK_HOST`
-   - `MIKROTIK_USER`
-   - `MIKROTIK_PASSWORD`
-   - `MIKROTIK_HOTSPOT_PROFILE` (`1hour`)
-   - `MIKROTIK_SYNC_KEY`
+3. Set environment variables in `.env.local`:
+   ```bash
+   DATABASE_URL=
+   NEXTAUTH_SECRET=
+   NEXTAUTH_URL=
+   GOOGLE_CLIENT_ID=
+   GOOGLE_CLIENT_SECRET=
+   MIKROTIK_HOST=
+   MIKROTIK_USER=
+   MIKROTIK_PASSWORD=
+   MIKROTIK_HOTSPOT_PROFILE=1hour
+   MIKROTIK_SYNC_KEY=
+   ```
 
-4. **Run the app**:
+4. Run the app:
    ```bash
    npm run dev
    ```
-   Open `http://localhost:3000`.
+
+5. Open `http://localhost:3000`.
 
 ---
 
-## 🛠️ Useful Commands
+## Useful Commands
 
-- `npm run dev` — Start Next.js in development mode
-- `npm run build` — Build production bundle
-- `npm run lint` — Run ESLint checks
-- `npx tsc --noEmit` — Run TypeScript type checking
-- `npm run test:mikrotik` — Test direct MikroTik REST API connection
-- `npx prisma db seed` — Seed initial reward and voucher rules
+- `npm run dev` - Start Next.js in development mode.
+- `npm run build` - Build the production bundle.
+- `npm run lint` - Run ESLint checks.
+- `npx tsc --noEmit` - Run TypeScript type checking.
+- `npm run test:mikrotik` - Run the direct MikroTik REST smoke test. This creates a router HotSpot user and should only be used intentionally.
+- `npx prisma db seed` - Seed initial reward rules, voucher rules, users, and device keys.

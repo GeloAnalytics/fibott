@@ -1,129 +1,145 @@
-# Fibott — System Reference
+# Fibott System Reference
 
-**Version:** 2.0 · **Architecture:** Mobile-first, single-board kiosk
+**Version:** 2.0
 
-Fibott is a reverse-vending kiosk that awards internet vouchers for deposited recyclable bottles and cans. The mobile app is the user interface; the ESP32-CAM is the embedded controller.
+**Architecture:** Mobile-first reverse vending kiosk with ESP32-CAM and MikroTik HotSpot vouchers
+
+Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The mobile app is the user interface, the ESP32-CAM is the kiosk controller, Neon stores application data, and MikroTik provides captive portal access.
 
 ---
 
 ## Architecture
 
-### System Communication Flow
-
-```
-                Internet
-                    │
-                    ▼
+```text
+                 Internet
+                    |
+                    v
             MikroTik hAP ax lite
-       (Open HotSpot AP + Walled Garden)
-                    │
-        ┌───────────┴───────────┐
-        ▼                       ▼
+       Open HotSpot AP + Walled Garden
+                    |
+        +-----------+-----------+
+        v                       v
   Mobile Web App           ESP32-CAM
-        │                       │
-        └──────── HTTPS ────────┘
-                    │
-                    ▼
-             Next.js (Vercel)
-                    │
-                    ├── Direct REST API (if reachable)
-                    └── Outbound Router Sync (GET /api/mikrotik/sync every 3s)
-                    │
-                    ▼
-             Neon PostgreSQL
+        |                       |
+        +---------- HTTPS ------+
+                    |
+                    v
+             Next.js on Vercel
+                    |
+          +---------+----------+
+          v                    v
+ Direct MikroTik REST   Outbound RouterOS sync
+ if reachable           GET /api/mikrotik/sync
+                    |
+                    v
+              Neon PostgreSQL
 ```
+
+---
+
+## Core Components
+
+| Component | Location | Purpose |
+|---|---|---|
+| Auth config | `src/lib/auth.ts` | NextAuth providers, email normalization, account/session callbacks. |
+| Admin password reset | `src/app/api/admin/users/reset-password/route.ts` | Admin-only password reset for users. |
+| Points ledger | `src/lib/points.ts` | Atomic earn, spend, and refund operations. |
+| Deposit processor | `src/lib/deposit.ts` | Creates deposits, awards points, and completes active sessions. |
+| Device auth | `src/lib/device-auth.ts` | Validates ESP32 `x-device-api-key` values. |
+| Device image intake | `src/app/api/device/deposit-image/route.ts` | Accepts ESP32-CAM images and classifies deposits. |
+| Device scan intake | `src/app/api/device/scan/route.ts` | Accepts structured scan payloads from firmware. |
+| Kiosk sessions | `src/app/api/kiosk/session/route.ts` | Starts and polls recycling sessions. |
+| Voucher redeem | `src/app/api/vouchers/redeem/route.ts` | Spends points and creates MikroTik vouchers. |
+| MikroTik direct REST | `src/lib/mikrotik-client.ts` | Optional direct RouterOS REST voucher creation. |
+| MikroTik sync | `src/app/api/mikrotik/sync/route.ts` | Router polling endpoint for pending vouchers. |
 
 ---
 
 ## Environment Variables
 
-| Variable | Description / Value |
+| Variable | Purpose |
 |---|---|
-| `MIKROTIK_HOST` | Router DDNS hostname (`hm20b2ta8p0.sn.mynetname.net`) or `"mock"` for offline dev |
-| `MIKROTIK_USER` | Router admin username (default: `admin`) |
-| `MIKROTIK_PASSWORD` | Router admin password |
-| `MIKROTIK_HOTSPOT_PROFILE` | Hotspot profile name on router (default: `1hour`) |
-| `MIKROTIK_PROTOCOL` | `https` for production, `http` for local dev |
-| `MIKROTIK_PORT` | `443` for production, `80` for local dev |
-| `MIKROTIK_INSECURE_TLS` | `true` if using self-signed router certificates |
-| `MIKROTIK_SYNC_KEY` | Shared secret key used by RouterOS script to authenticate polls to `/api/mikrotik/sync` |
-| `ALLOW_MOCK_VOUCHER` | `true` (optional) to allow mock voucher generation in dev environments |
+| `DATABASE_URL` | Neon/Postgres connection string. |
+| `NEXTAUTH_SECRET` | NextAuth signing/encryption secret. |
+| `NEXTAUTH_URL` | Public app URL, normally `https://fibott.vercel.app` in production. |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID. |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret. |
+| `MIKROTIK_HOST` | Router DDNS hostname or `mock` for offline development. |
+| `MIKROTIK_USER` | RouterOS API username. |
+| `MIKROTIK_PASSWORD` | RouterOS API password. |
+| `MIKROTIK_HOTSPOT_PROFILE` | HotSpot user profile, normally `1hour`. |
+| `MIKROTIK_PROTOCOL` | `https` in production unless the router is configured otherwise. |
+| `MIKROTIK_PORT` | Router REST port. |
+| `MIKROTIK_INSECURE_TLS` | `true` if the router uses a self-signed certificate. |
+| `MIKROTIK_SYNC_KEY` | Shared secret for RouterOS polling sync. |
+| `ALLOW_MOCK_VOUCHER` | Optional development flag for mock voucher behavior. |
 
 ---
 
-## MikroTik HotSpot & Walled Garden Configuration
+## Authentication
 
-### 1. Open WiFi Network (No Password)
-- SSID: **Fibott**
-- Security profile: **Open** (`authentication-types=none`)
-- Access control handled entirely by the captive portal voucher system.
-
-### 2. Walled Garden Rules (Google Login & Web App Access)
-Unauthenticated users connected to the Fibott hotspot can access only the web app and Google Sign-In subdomains before authentication:
-
-| Host / Pattern | Description |
-|---|---|
-| `fibott.vercel.app` | Fibott web application |
-| `*google.com` | Google OAuth login pages |
-| `*googleapis.com` | Google OAuth token verification APIs |
-| `*gstatic.com` | Google authentication static assets |
-| `*googleusercontent.com` | Google account profile images |
+- Credentials login normalizes email before lookup.
+- Registration and forgot-password also normalize email.
+- Google OAuth maps Google profile data into the same normalized email format.
+- Existing Google/account-linking problems should be retested after deployment. If `OAuthAccountNotLinked` still appears, confirm the production Google OAuth redirect URI and existing account linkage state.
 
 ---
 
-## Router Integration (Outbound RouterOS Polling Sync)
+## Points and Deposits
 
-The primary voucher delivery method is **Outbound RouterOS Polling Sync**:
+1. A user starts a kiosk session from the web app.
+2. The ESP32-CAM polls for an active session.
+3. The ESP32 posts a scan or image with `x-device-api-key`.
+4. The deposit processor validates the material and active session.
+5. Accepted deposits call `awardPoints` and complete the session.
+6. Rejected deposits are recorded with a rejection reason and do not award points.
 
+---
+
+## Voucher System
+
+1. Authenticated users redeem points from the wallet.
+2. The app checks an active voucher rule and spends points atomically.
+3. A voucher code is generated in `FBT-XXXX-XXXX-XXXX` format.
+4. The app attempts direct MikroTik REST creation if configured and reachable.
+5. If direct REST has a network/router reachability issue, the voucher remains `PENDING` for outbound sync.
+6. The MikroTik router polls `/api/mikrotik/sync`, creates the HotSpot user, then confirms issuance.
+
+The stable production path is outbound RouterOS polling sync. Do not remove it while debugging direct REST.
+
+---
+
+## MikroTik HotSpot Requirements
+
+- SSID: `Fibott`
+- Wi-Fi security: open network, no WPA password.
+- Captive portal controls access through HotSpot vouchers.
+- HotSpot user profile `1hour` must exist.
+- Walled garden should allow:
+  - `fibott.vercel.app`
+  - `*.google.com`
+  - `*.googleapis.com`
+  - `*.gstatic.com`
+  - `*.googleusercontent.com`
+
+---
+
+## User Voucher Claiming
+
+1. User redeems points on `/dashboard/wallet`.
+2. User taps **Use Voucher**.
+3. The app copies the voucher code and opens `http://192.168.88.1/login`.
+4. User pastes the code into both Username and Password.
+5. MikroTik HotSpot grants access based on the created HotSpot user.
+
+---
+
+## Validation Commands
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
-+-----------------------------------------------------------------------------------+
-| MikroTik ---> (HTTPS Outbound every 3s) ---> GET /api/mikrotik/sync               |
-| 1. Router polls Vercel for PENDING vouchers                                       |
-| 2. Router creates HotSpot user (/ip hotspot user add ...)                         |
-| 3. Router confirms issuance to Vercel (voucher status -> ISSUED)                  |
-+-----------------------------------------------------------------------------------+
-```
 
-Benefits: Zero open ports required, zero DDNS dependency, zero port-forwarding needed. Works behind NAT and CGNAT.
-
----
-
-## User Voucher Claiming & UI
-
-1. User redeems points on the Wallet page (`/dashboard/wallet`).
-2. The code (`FBT-XXXX-XXXX-XXXX`) is displayed immediately with the interactive **VoucherActions** component:
-   - **Use Voucher (Connect to Wi-Fi)**: Copies the code to clipboard and opens `http://192.168.88.1/login` in a new tab.
-   - **Copy Code**: Copies code to clipboard with instant toast confirmation.
-   - **How to connect?**: Quick 3-step instructions on pasting the code into Username & Password fields.
-3. Every voucher entry in the "My Vouchers" table includes compact **Copy** and **Use Voucher** action buttons.
-
----
-
-## Timezone Standard
-
-All system logs, audit logs, deposit records, and transaction ledgers are formatted explicitly in **Philippines Time (Asia/Manila, UTC+8 / GMT+8)** via `src/lib/date-utils.ts`.
-
----
-
-## API Endpoints
-
-| Endpoint | Caller | Purpose |
-|---|---|---|
-| `POST /api/auth/*` | Mobile app | Login, register, reset password |
-| `POST /api/kiosk/session` | Mobile app | Start recycling session |
-| `GET /api/kiosk/session` | ESP32-CAM / mobile app | Poll active session or check session status |
-| `POST /api/device/deposit-image` | ESP32-CAM | Upload image, classify, award points |
-| `POST /api/device/logs` | ESP32-CAM / system | Post device telemetry & hardware logs |
-| `GET /api/admin/logs` | Admin | Query system & hardware telemetry logs |
-| `DELETE /api/admin/logs` | Admin | Purge logs |
-| `POST /api/vouchers/redeem` | Mobile app | Spend points and create/queue voucher |
-| `GET /api/mikrotik/sync` | MikroTik | Poll pending voucher and confirm issuance |
-
----
-
-## ML Classifier
-
-- File: `src/lib/classifier.ts`
-- Base model: TensorFlow.js + MobileNetV2
-- Fine-tuned head: `models/bottle-can-head/weights.json`
-- Pipeline: `npm run ml:train`
+Use `npm run test:mikrotik` only when you are ready to create and then clean up a real test HotSpot user.
