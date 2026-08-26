@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const SESSION_TTL_MS = 5 * 60 * 1000;
+const SESSION_TTL_MS = 3 * 60 * 1000;
 
 function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();

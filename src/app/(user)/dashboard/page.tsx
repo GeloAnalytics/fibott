@@ -40,17 +40,28 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
+      {/* Primary actions — shown first so they are visible without scrolling on mobile */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="mb-3 text-lg font-medium">Recycle</h2>
+          <RecyclingSession />
+        </div>
+
+        {activeVouchers === 0 && user.pointsBalance > 0 && (
+          <p className="text-sm text-muted-foreground">
+            <Link href="/dashboard/wallet" className="font-medium text-primary hover:underline">
+              Redeem your points for a WiFi voucher →
+            </Link>
+          </p>
+        )}
+      </div>
+
       <HeroStat value={user.pointsBalance} label="Points balance" qualifier={qualifier} />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Items recycled" value={itemsSubmitted} />
         <StatCard label="Active vouchers" value={activeVouchers} />
         <StatCard label="Recent transactions" value={recentActivity.length} />
-      </div>
-
-      <div>
-        <h2 className="mb-3 text-lg font-medium">Recycle</h2>
-        <RecyclingSession />
       </div>
 
       <div>
@@ -87,14 +98,6 @@ export default async function DashboardPage() {
           </ul>
         )}
       </div>
-
-      {activeVouchers === 0 && user.pointsBalance > 0 && (
-        <p className="text-sm text-muted-foreground">
-          <Link href="/dashboard/wallet" className="font-medium text-primary hover:underline">
-            Redeem your points for a WiFi voucher →
-          </Link>
-        </p>
-      )}
     </div>
   );
 }

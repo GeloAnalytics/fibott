@@ -12,6 +12,7 @@ type Phase =
   | { name: "active"; sessionId: string; expiresAt: Date }
   | { name: "completed"; pointsAwarded: number }
   | { name: "expired" }
+  | { name: "busy" }
   | { name: "error"; message: string };
 
 // A lazy useState initializer here previously only ran once, while
@@ -136,7 +137,7 @@ export function RecyclingSession() {
       const data = await res.json();
 
       if (res.status === 409) {
-        setPhase({ name: "error", message: "The kiosk is already in use. Please wait a moment and try again." });
+        setPhase({ name: "busy" });
         return;
       }
       if (!res.ok) {
@@ -166,7 +167,7 @@ export function RecyclingSession() {
                 Press the button, then insert a bottle or can at the kiosk to earn points.
               </p>
             </div>
-            <Button onClick={handleStart} className="gap-2">
+            <Button onClick={handleStart} className="w-full gap-2 sm:w-fit">
               <Recycle className="size-4" />
               Start Recycling
             </Button>
@@ -233,6 +234,23 @@ export function RecyclingSession() {
               </div>
             </div>
             <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
+              Try Again
+            </Button>
+          </div>
+        )}
+
+        {phase.name === "busy" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <Clock className="size-6 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">System currently in use</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Another user is currently recycling. Please wait a moment, then try again.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={handleReset} className="w-full gap-2 sm:w-fit">
               Try Again
             </Button>
           </div>

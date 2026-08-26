@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 
-const SESSION_TTL_MS = 5 * 60 * 1000;
+const SESSION_TTL_MS = 3 * 60 * 1000;
 
 async function expireStale() {
   await prisma.depositSession.updateMany({
