@@ -119,14 +119,14 @@
 # The router polls Vercel outbound every 3 seconds for pending vouchers,
 # creates the HotSpot user locally, and confirms issuance.
 
-/system script add name=fibott-sync policy=read,write,test source="
+/system script add name=fibott-sync policy=ftp,read,write,test source="
 :local syncKey \"f8a92e104d5b6c7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a\"
 :local appUrl \"https://fibott.vercel.app/api/mikrotik/sync\"
 
 :do {
   :local fetchUrl \"\$appUrl\?key=\$syncKey\"
   :if ([:len \$syncKey] = 0) do={ :set fetchUrl \$appUrl }
-  :local res [/tool fetch url=\$fetchUrl as-value output=user]
+  :local res [/tool fetch url=\$fetchUrl mode=https output=user as-value]
   :local data (\$res->\"data\")
   :if (\$data ~ \"^PENDING:\") do={
     :local firstColon [:find \$data \":\" 0]
