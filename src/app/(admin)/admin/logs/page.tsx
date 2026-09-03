@@ -12,6 +12,12 @@ import {
   CheckCircle2,
   Info,
   XCircle,
+  Wifi,
+  WifiOff,
+  Clock,
+  Send,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 interface SystemLogEntry {
   id: string;
@@ -53,6 +60,18 @@ interface PaginationInfo {
   totalPages: number;
 }
 
+interface DeviceHealth {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  location?: string | null;
+  lastSeenAt?: string | null;
+  connectivity: "online" | "stale" | "offline" | "unknown";
+  recentErrors: number;
+  recentWarnings: number;
+}
+
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<SystemLogEntry[]>([]);
   const [metrics, setMetrics] = useState<LogMetrics>({
@@ -73,6 +92,19 @@ export default function AdminLogsPage() {
   const [sourceFilter, setSourceFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLog, setSelectedLog] = useState<SystemLogEntry | null>(null);
+
+  // Device health state
+  const [devices, setDevices] = useState<DeviceHealth[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+
+  // Send Alert form state
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertLevel, setAlertLevel] = useState<"INFO" | "WARN" | "ERROR">("WARN");
+  const [alertTag, setAlertTag] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertDetails, setAlertDetails] = useState("");
+  const [alertDeviceId, setAlertDeviceId] = useState("");
+  const [alertSending, setAlertSending] = useState(false);
 
   const fetchLogs = useCallback(
     async (showLoadingState = false) => {
@@ -101,12 +133,31 @@ export default function AdminLogsPage() {
     [pagination.page, pagination.limit, levelFilter, sourceFilter, searchQuery]
   );
 
+  const fetchDevices = useCallback(async () => {
+    setDevicesLoading(true);
+    try {
+      const res = await fetch("/api/admin/device-alerts");
+      if (!res.ok) throw new Error("Failed to load device health");
+      const data = await res.json();
+      setDevices(data.devices || []);
+    } catch (err) {
+      console.error("Error fetching device health:", err);
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLogs(true);
   }, [fetchLogs]);
 
-  // Auto-refresh interval (5s)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchDevices();
+  }, [fetchDevices]);
+
+  // Auto-refresh interval (5s for logs, 30s for device health)
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
@@ -114,6 +165,11 @@ export default function AdminLogsPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchLogs]);
+
+  useEffect(() => {
+    const interval = setInterval(fetchDevices, 30000);
+    return () => clearInterval(interval);
+  }, [fetchDevices]);
 
   async function handlePurgeLogs(all = false) {
     if (!confirm(all ? "Are you sure you want to delete ALL logs?" : "Delete logs older than 7 days?")) {
@@ -126,6 +182,41 @@ export default function AdminLogsPage() {
       fetchLogs(true);
     } catch {
       toast.error("Could not clear logs");
+    }
+  }
+
+  async function handleSendAlert(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!alertTag.trim() || !alertMessage.trim()) {
+      toast.error("Tag and message are required");
+      return;
+    }
+    setAlertSending(true);
+    try {
+      const res = await fetch("/api/admin/device-alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          level: alertLevel,
+          tag: alertTag.trim().toUpperCase(),
+          message: alertMessage.trim(),
+          details: alertDetails.trim() || undefined,
+          deviceId: alertDeviceId || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to send alert");
+      toast.success("Alert logged to system");
+      setAlertOpen(false);
+      setAlertTag("");
+      setAlertMessage("");
+      setAlertDetails("");
+      setAlertDeviceId("");
+      setAlertLevel("WARN");
+      fetchLogs(true);
+    } catch {
+      toast.error("Could not send alert");
+    } finally {
+      setAlertSending(false);
     }
   }
 
@@ -168,17 +259,69 @@ export default function AdminLogsPage() {
     );
   }
 
+  function getConnectivityBadge(connectivity: DeviceHealth["connectivity"], lastSeenAt?: string | null) {
+    const ago = lastSeenAt ? formatDistanceToNow(new Date(lastSeenAt), { addSuffix: true }) : null;
+    switch (connectivity) {
+      case "online":
+        return (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Online</span>
+            </div>
+            {ago && <span className="text-[10px] text-muted-foreground">Seen {ago}</span>}
+          </div>
+        );
+      case "stale":
+        return (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <Clock className="size-3 text-amber-500" />
+              <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Stale</span>
+            </div>
+            {ago && <span className="text-[10px] text-muted-foreground">Seen {ago}</span>}
+          </div>
+        );
+      case "offline":
+        return (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <WifiOff className="size-3 text-destructive" />
+              <span className="text-xs font-semibold text-destructive">Offline</span>
+            </div>
+            {ago && <span className="text-[10px] text-muted-foreground">Last seen {ago}</span>}
+          </div>
+        );
+      default:
+        return (
+          <div className="flex items-center gap-1.5">
+            <Wifi className="size-3 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Never seen</span>
+          </div>
+        );
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">System & Hardware Logs</h1>
+          <h1 className="text-2xl font-bold tracking-tight">System &amp; Hardware Logs</h1>
           <p className="text-sm text-muted-foreground">
             Realtime telemetry, hardware errors, and backend diagnostic reports.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setAlertOpen(true)}
+            className="gap-2"
+          >
+            <Send className="size-3.5" />
+            Send Alert
+          </Button>
           <Button
             variant={autoRefresh ? "default" : "outline"}
             size="sm"
@@ -195,6 +338,76 @@ export default function AdminLogsPage() {
             <Trash2 className="size-3.5 mr-1" /> Purge &gt;7 Days
           </Button>
         </div>
+      </div>
+
+      {/* Device Health Panel */}
+      <div>
+        <h2 className="text-sm font-semibold uppercase text-muted-foreground tracking-wide mb-3">
+          Device Health
+        </h2>
+        {devicesLoading ? (
+          <div className="text-sm text-muted-foreground">Loading device health…</div>
+        ) : devices.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              No devices registered. Register an ESP32-CAM in the device management section.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {devices.map((device) => (
+              <Card
+                key={device.id}
+                className={`border transition-colors ${
+                  device.connectivity === "online"
+                    ? "border-emerald-500/30"
+                    : device.connectivity === "offline"
+                    ? "border-destructive/30"
+                    : device.connectivity === "stale"
+                    ? "border-amber-500/30"
+                    : ""
+                }`}
+              >
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sm">{device.name}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">{device.type}</p>
+                      {device.location && (
+                        <p className="text-[11px] text-muted-foreground">{device.location}</p>
+                      )}
+                    </div>
+                    <Badge
+                      variant={device.status === "ACTIVE" ? "secondary" : "outline"}
+                      className="text-[10px] shrink-0"
+                    >
+                      {device.status}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    {getConnectivityBadge(device.connectivity, device.lastSeenAt)}
+                    <div className="flex items-center gap-2 text-[10px]">
+                      {device.recentErrors > 0 && (
+                        <span className="flex items-center gap-0.5 text-destructive font-semibold">
+                          <XCircle className="size-3" /> {device.recentErrors}E
+                        </span>
+                      )}
+                      {device.recentWarnings > 0 && (
+                        <span className="flex items-center gap-0.5 text-amber-500 font-semibold">
+                          <AlertTriangle className="size-3" /> {device.recentWarnings}W
+                        </span>
+                      )}
+                      {device.recentErrors === 0 && device.recentWarnings === 0 && (
+                        <span className="text-muted-foreground">No issues (24h)</span>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Metrics Row */}
@@ -232,7 +445,7 @@ export default function AdminLogsPage() {
             <div className="text-2xl font-bold tabular-nums">
               {metrics.totalErrors}
             </div>
-            <p className="text-xs text-muted-foreground">API & Router communication failures</p>
+            <p className="text-xs text-muted-foreground">API &amp; Router communication failures</p>
           </CardContent>
         </Card>
 
@@ -424,6 +637,138 @@ export default function AdminLogsPage() {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Alert Dialog */}
+      <Dialog open={alertOpen} onOpenChange={setAlertOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="size-4" />
+              Send Hardware Alert
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">
+            Manually flag a hardware issue or observation. This will appear in the log feed and admin dashboard immediately.
+          </p>
+          <form onSubmit={handleSendAlert} className="space-y-4 pt-2">
+            {/* Level selector */}
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted-foreground mb-1.5 block">
+                Severity Level
+              </label>
+              <div className="flex gap-2">
+                {(["INFO", "WARN", "ERROR"] as const).map((lvl) => (
+                  <Button
+                    key={lvl}
+                    type="button"
+                    size="sm"
+                    variant={alertLevel === lvl ? "default" : "outline"}
+                    className={`text-xs h-8 ${
+                      lvl === "ERROR" && alertLevel === "ERROR"
+                        ? "bg-destructive hover:bg-destructive/90"
+                        : lvl === "WARN" && alertLevel === "WARN"
+                        ? "bg-amber-500 hover:bg-amber-500/90 text-white"
+                        : ""
+                    }`}
+                    onClick={() => setAlertLevel(lvl)}
+                  >
+                    {lvl}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Device target (optional) */}
+            {devices.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold uppercase text-muted-foreground mb-1.5 block">
+                  Target Device <span className="font-normal normal-case">(optional)</span>
+                </label>
+                <select
+                  value={alertDeviceId}
+                  onChange={(e) => setAlertDeviceId(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— No specific device —</option>
+                  {devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Tag */}
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted-foreground mb-1.5 block">
+                Tag
+              </label>
+              <Input
+                placeholder="e.g. CAMERA, SERVO, POWER, NETWORK"
+                value={alertTag}
+                onChange={(e) => setAlertTag(e.target.value.toUpperCase())}
+                maxLength={32}
+                className="text-sm font-mono"
+              />
+            </div>
+
+            {/* Message */}
+            <div>
+              <label className="text-xs font-semibold uppercase text-muted-foreground mb-1.5 block">
+                Message
+              </label>
+              <Input
+                placeholder="Short description of the issue"
+                value={alertMessage}
+                onChange={(e) => setAlertMessage(e.target.value)}
+                maxLength={500}
+                className="text-sm"
+              />
+            </div>
+
+            {/* Details (expandable) */}
+            <div>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5"
+                onClick={() => setAlertDetails(alertDetails ? "" : " ")}
+              >
+                {alertDetails !== "" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                Additional details / observations
+              </button>
+              {alertDetails !== "" && (
+                <textarea
+                  placeholder="Paste error codes, observations, troubleshooting steps taken..."
+                  value={alertDetails}
+                  onChange={(e) => setAlertDetails(e.target.value)}
+                  maxLength={2000}
+                  rows={4}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button type="submit" disabled={alertSending} className="gap-2">
+                {alertSending ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : (
+                  <Send className="size-3.5" />
+                )}
+                {alertSending ? "Sending…" : "Log Alert"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAlertOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

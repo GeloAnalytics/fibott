@@ -48,23 +48,25 @@ Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The 
 | Device auth | `src/lib/device-auth.ts` | Validates ESP32 `x-device-api-key` values. |
 | Device image intake | `src/app/api/device/deposit-image/route.ts` | Accepts ESP32-CAM images and classifies deposits. |
 | Device scan intake | `src/app/api/device/scan/route.ts` | Accepts structured scan payloads from firmware. |
-| Kiosk sessions | `src/app/api/kiosk/session/route.ts` | Starts and polls recycling sessions. |
+| Device log intake | `src/app/api/device/logs/route.ts` | Accepts telemetry logs from firmware, stored in `SystemLog`. |
+| Kiosk sessions | `src/app/api/kiosk/session/route.ts` | Starts (POST), polls (GET), and cancels (DELETE) recycling sessions. Session TTL is **1 minute**. |
 | Voucher redeem | `src/app/api/vouchers/redeem/route.ts` | Spends points and creates MikroTik vouchers. |
 | MikroTik direct REST | `src/lib/mikrotik-client.ts` | Optional direct RouterOS REST voucher creation. |
 | MikroTik sync | `src/app/api/mikrotik/sync/route.ts` | Router polling endpoint for pending vouchers. |
+| Admin logs | `src/app/api/admin/logs/route.ts` | Paginated system log feed with level/source/tag filters. |
+| Admin device alerts | `src/app/api/admin/device-alerts/route.ts` | Device health summary (GET) and admin-initiated manual alerts (POST). |
 
 ---
 
 ## Firmware Specifications
 
-Fibott provides four production firmware projects under `firmware/`:
+Fibott has one canonical firmware under `firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/`:
 
 | Firmware Folder | Target Hardware | Audio Driver | Pin Mapping & Description |
 |---|---|---|---|
-| [`firmware/esp32-cam`](../firmware/esp32-cam/) | Standard ESP32-CAM | Visual (LED) | Servo on **GPIO13**, Status LED on **GPIO33**. Base image capture + servo gate firmware. |
-| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/) | ESP32-CAM + 2-Pin Buzzer | Active / Passive PWM | Servo on **GPIO13**, Buzzer `(+)` on **GPIO14**, `(-)` to **GND**, Status LED on **GPIO33**. Active digital pulses or LEDC PWM hardware tone generator. |
-| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-3pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-3pin/) | ESP32-CAM + 3-Pin Buzzer Module | Transistor Driven | Servo on **GPIO13**, Buzzer `SIG` on **GPIO14**, `VCC` to **5V/3.3V**, `GND` to **GND**, Status LED on **GPIO33**. Supports Active-HIGH and Active-LOW transistor breakout modules. |
-| [`firmware/kiosk-controller`](../firmware/kiosk-controller/) | Standalone Controller / Secondary MCU | Multi-sensor | Microcontroller logic for auxiliary physical chute sensors and gate triggers. |
+| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/) | AI-Thinker ESP32-CAM | Active / Passive 2-Pin Buzzer | Servo on **GPIO13**, Buzzer `(+)` on **GPIO14**, `(-)` to **GND**, Status LED on **GPIO33**. Comprehensive serial diagnostics, admin telemetry, periodic heartbeat. |
+
+> `firmware/esp32-cam/` (if still present on disk) is a legacy no-buzzer sketch kept only in git history — do not flash it.
 
 ### Audible Feedback Protocol (Buzzer Firmware)
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Recycle, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Loader2, Recycle, CheckCircle, Clock, AlertCircle, LogOut } from "lucide-react";
 
 type Phase =
   | { name: "idle" }
@@ -12,6 +12,7 @@ type Phase =
   | { name: "active"; sessionId: string; expiresAt: Date }
   | { name: "completed"; pointsAwarded: number }
   | { name: "expired" }
+  | { name: "cancelled" }
   | { name: "busy" }
   | { name: "error"; message: string };
 
@@ -43,6 +44,7 @@ function formatTime(seconds: number): string {
 
 export function RecyclingSession() {
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const [ending, setEnding] = useState(false);
   const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -88,9 +90,12 @@ export function RecyclingSession() {
           stopPolling();
           setPhase({ name: "completed", pointsAwarded: data.pointsAwarded ?? 0 });
           router.refresh();
-        } else if (data.status === "EXPIRED" || data.status === "CANCELLED") {
+        } else if (data.status === "EXPIRED") {
           stopPolling();
           setPhase({ name: "expired" });
+        } else if (data.status === "CANCELLED") {
+          stopPolling();
+          setPhase({ name: "cancelled" });
         }
       } catch (e) {
         console.log("[poll] error", e);
@@ -151,10 +156,33 @@ export function RecyclingSession() {
     }
   }
 
+  async function handleEndSession() {
+    if (phase.name !== "active") return;
+    setEnding(true);
+    try {
+      const res = await fetch(`/api/kiosk/session?id=${phase.sessionId}`, { method: "DELETE" });
+      stopPolling();
+      if (res.ok) {
+        setPhase({ name: "cancelled" });
+      } else {
+        // If end fails, just go back to idle
+        setPhase({ name: "idle" });
+      }
+    } catch {
+      stopPolling();
+      setPhase({ name: "idle" });
+    } finally {
+      setEnding(false);
+    }
+  }
+
   function handleReset() {
     stopPolling();
     setPhase({ name: "idle" });
   }
+
+  // Countdown urgency colour
+  const isUrgent = phase.name === "active" && remaining <= 15;
 
   return (
     <Card>
@@ -190,14 +218,40 @@ export function RecyclingSession() {
                   Insert a bottle or can at the kiosk now.
                 </p>
               </div>
-              <div className="flex items-center gap-1.5 text-sm tabular-nums text-muted-foreground">
-                <Clock className="size-4" />
+              <div
+                className={`flex items-center gap-1.5 text-sm tabular-nums font-mono transition-colors ${
+                  isUrgent ? "text-destructive font-semibold" : "text-muted-foreground"
+                }`}
+              >
+                <Clock className={`size-4 ${isUrgent ? "animate-pulse" : ""}`} />
                 {formatTime(remaining)}
               </div>
             </div>
+
             <div className="flex gap-2 items-center">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Waiting for deposit…</span>
+            </div>
+
+            {/* End Session button — user voluntarily ends the session */}
+            <div className="pt-1 border-t border-border">
+              <p className="text-xs text-muted-foreground mb-2">
+                Done depositing? End your session early to free up the kiosk.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleEndSession}
+                disabled={ending}
+                className="gap-2 text-muted-foreground hover:text-foreground"
+              >
+                {ending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="size-3.5" />
+                )}
+                {ending ? "Ending session…" : "End Session"}
+              </Button>
             </div>
           </div>
         )}
@@ -222,6 +276,24 @@ export function RecyclingSession() {
           </div>
         )}
 
+        {phase.name === "cancelled" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <CheckCircle className="size-6 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Session ended</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Your recycling session has been closed. Start a new one anytime.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
+              <Recycle className="size-4" />
+              Start New Session
+            </Button>
+          </div>
+        )}
+
         {phase.name === "expired" && (
           <div className="flex flex-col gap-4">
             <div className="flex items-start gap-3">
@@ -229,7 +301,7 @@ export function RecyclingSession() {
               <div>
                 <p className="font-medium">Session expired</p>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  No deposit was detected in time. Please try again.
+                  No deposit was detected within 1 minute. Please try again.
                 </p>
               </div>
             </div>

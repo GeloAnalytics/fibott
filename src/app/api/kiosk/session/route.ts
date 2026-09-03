@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 
-const SESSION_TTL_MS = 3 * 60 * 1000;
+const SESSION_TTL_MS = 1 * 60 * 1000; // 1 minute — users must deposit within this window
 
 async function expireStale() {
   await prisma.depositSession.updateMany({
@@ -130,4 +130,34 @@ export async function GET(req: Request) {
     sessionId: active.id,
     expiresAt: active.expiresAt,
   });
+}
+
+// DELETE — authenticated user voluntarily ends their active session
+export async function DELETE(req: Request) {
+  const url = new URL(req.url);
+  const sessionId = url.searchParams.get("id");
+
+  const userSession = await auth();
+  if (!userSession?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!sessionId) {
+    return NextResponse.json({ error: "Missing session id" }, { status: 400 });
+  }
+
+  const record = await prisma.depositSession.findFirst({
+    where: { id: sessionId, userId: userSession.user.id, status: "ACTIVE" },
+  });
+
+  if (!record) {
+    return NextResponse.json({ error: "Session not found or already ended" }, { status: 404 });
+  }
+
+  await prisma.depositSession.update({
+    where: { id: sessionId },
+    data: { status: "CANCELLED", completedAt: new Date() },
+  });
+
+  return NextResponse.json({ success: true, status: "CANCELLED" });
 }
