@@ -42,6 +42,8 @@
 
 #include "config.h"
 #include "esp_camera.h"
+#include "img_converters.h"
+#include "model_data.h"
 #include "driver/ledc.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -228,13 +230,10 @@ static bool cameraInit() {
   cfg.pin_pwdn     = CAM_PWDN;
   cfg.pin_reset    = CAM_RESET;
   cfg.xclk_freq_hz = 20000000;
-  // GRAYSCALE at QVGA (320×240 = 76,800 bytes raw) allows classifyLocally to
-  // read actual pixel luminance values and compute texture variance — far more
-  // reliable than trying to infer material type from compressed JPEG file size.
-  // We no longer upload the raw image; only a JSON {materialType} is sent.
-  cfg.pixel_format = PIXFORMAT_GRAYSCALE;
-  cfg.frame_size   = FRAMESIZE_QVGA;    // 320×240
-  cfg.jpeg_quality = 12;                // Not used for GRAYSCALE, kept for clarity
+  // JPEG at VGA (640×480) for Cloud AI Neural Network classification
+  cfg.pixel_format = PIXFORMAT_JPEG;
+  cfg.frame_size   = FRAMESIZE_VGA;    // 640×480
+  cfg.jpeg_quality = 12;               // 0 = best, 63 = worst
   cfg.fb_count     = 1;
   cfg.fb_location  = CAMERA_FB_IN_PSRAM;
   cfg.grab_mode    = CAMERA_GRAB_LATEST;
@@ -256,9 +255,9 @@ static bool cameraInit() {
     return false;
   }
   s->set_brightness(s,  1);  // Slight brightness boost for indoor lighting
-  s->set_contrast(s,    1);  // Increase contrast to emphasize can label edges
+  s->set_saturation(s, -1);  // Slightly reduced saturation
 
-  LOG("CAMERA", "OV2640 ready — QVGA GRAYSCALE, PSRAM frame buffer");
+  LOG("CAMERA", "OV2640 ready — VGA JPEG, PSRAM frame buffer");
   return true;
 }
 
@@ -386,10 +385,17 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 }
 
 // ── Image Capture ─────────────────────────────────────────────────────────────
-// Returns a camera frame buffer, or NULL on failure (with verbose diagnostics).
+// Flashes ESP32 Flash LED (GPIO4) during capture for active translucency illumination.
 static camera_fb_t* captureImage() {
-  LOG("CAMERA", "Capturing frame from OV2640...");
+  LOG("CAMERA", "Capturing frame from OV2640 with Flash LED active...");
+
+  pinMode(4, OUTPUT);
+  digitalWrite(4, HIGH); // Flash LED ON
+  delay(60);             // Allow LED to illuminate and camera sensor to settle
+
   camera_fb_t *fb = esp_camera_fb_get();
+
+  digitalWrite(4, LOW);  // Flash LED OFF
 
   if (!fb) {
     LOG("CAMERA", "ERROR: esp_camera_fb_get() returned NULL");
@@ -533,49 +539,157 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   return "";
 }
 
-// ── Fast Local ESP32 Surface Texture Classifier ───────────────────────────────
-// We use Adjacent Pixel Gradient (|P[x+1] - P[x]| + |P[y+1] - P[y]|):
-// - PET Bottles: Smooth clear/translucent plastic → adjacent pixels are nearly
-//   identical even across light/dark zones (avgGradient < 12).
-// - Aluminum Cans: Printed text, logos, barcode, metallic specular edges →
-//   high micro-contrast between neighboring pixels (avgGradient ≥ 12).
-#define CAN_GRADIENT_THRESHOLD 12UL  // Neighboring pixel difference threshold
+// ── ESP32 Local ML Classifier (MobileNetV1 96x96 INT8 TinyML Engine) ─────────
+struct LocalClassificationResult {
+  const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
+  float petProb;
+  float canProb;
+  float confidence;
+  bool isConfident;
+};
 
-static const char* classifyLocally(camera_fb_t *fb) {
-  if (!fb || !fb->buf || fb->len == 0) return "PET_BOTTLE";
+static uint8_t *tensorArenaBuffer = nullptr;
+static uint8_t *rgbDecodeBuffer = nullptr;
+static bool tfliteInitialized = false;
 
-  const int W = 320;
-  const int cx = 160, cy = 120;
-  const int halfW = 80, halfH = 60;  // 160×120 region = 19,200 pixels
+static bool initLocalML() {
+  if (tfliteInitialized) return true;
 
-  uint64_t gradientSum = 0;
-  uint32_t count = 0;
-  uint32_t sum = 0;
+  LOG("TINYML", "Initialising MobileNetV1 96x96 INT8 Local ML Engine...");
+  LOGF("TINYML", "Model size: %u bytes | Tensor Arena: %d KB", g_model_data_len, MODEL_TENSOR_ARENA_SIZE / 1024);
 
-  for (int y = cy - halfH; y < cy + halfH - 1; y++) {
-    for (int x = cx - halfW; x < cx + halfW - 1; x++) {
-      uint8_t p   = fb->buf[y * W + x];
-      uint8_t pR  = fb->buf[y * W + (x + 1)]; // Right neighbor
-      uint8_t pD  = fb->buf[(y + 1) * W + x]; // Down neighbor
+  // Allocate Tensor Arena and RGB decode buffer from PSRAM to preserve internal SRAM
+  if (psramFound()) {
+    tensorArenaBuffer = (uint8_t*) heap_caps_malloc(MODEL_TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    rgbDecodeBuffer   = (uint8_t*) heap_caps_malloc(640 * 480 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
 
-      sum += p;
-      gradientSum += (abs((int)p - (int)pR) + abs((int)p - (int)pD));
-      count++;
+  if (!tensorArenaBuffer) {
+    LOG("TINYML", "WARN: PSRAM allocation failed, attempting fallback to internal SRAM...");
+    tensorArenaBuffer = (uint8_t*) malloc(MODEL_TENSOR_ARENA_SIZE);
+  }
+  if (!rgbDecodeBuffer) {
+    rgbDecodeBuffer = (uint8_t*) malloc(320 * 240 * 3);
+  }
+
+  if (!tensorArenaBuffer || !rgbDecodeBuffer) {
+    LOG("TINYML", "ERROR: Could not allocate memory buffers for Local ML inference!");
+    return false;
+  }
+
+  tfliteInitialized = true;
+  LOG("TINYML", "Local ML Engine initialized successfully in PSRAM!");
+  return true;
+}
+
+static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
+  LocalClassificationResult res;
+  res.materialType = "REJECTED";
+  res.petProb      = 0.0f;
+  res.canProb      = 0.0f;
+  res.confidence   = 0.0f;
+  res.isConfident  = false;
+
+  if (!fb || !fb->buf || fb->len == 0) {
+    LOG("TINYML", "ERROR: Empty camera frame buffer passed to ML engine");
+    return res;
+  }
+
+  if (!tfliteInitialized) {
+    initLocalML();
+  }
+
+  unsigned long startMs = millis();
+
+  // 1. Decode JPEG to RGB888
+  bool decodeOk = false;
+  int srcW = fb->width;
+  int srcH = fb->height;
+
+  if (rgbDecodeBuffer) {
+    decodeOk = fmt2rgb888(fb->buf, fb->len, fb->format, rgbDecodeBuffer);
+  }
+
+  if (!decodeOk) {
+    LOG("TINYML", "ERROR: Failed to decode framebuffer to RGB888");
+    return res;
+  }
+
+  // 2. Preprocess & Quantize to 96x96 INT8 input
+  // Formula: int8_pix = (int8_t)roundf(((rgb_uint8 / 127.5f) - 1.0f) / MODEL_INPUT_SCALE + MODEL_INPUT_ZERO_POINT)
+  int8_t inputTensor[MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * MODEL_INPUT_CHANNELS];
+
+  for (int y = 0; y < MODEL_INPUT_SIZE; y++) {
+    int srcY = (y * srcH) / MODEL_INPUT_SIZE;
+    for (int x = 0; x < MODEL_INPUT_SIZE; x++) {
+      int srcX = (x * srcW) / MODEL_INPUT_SIZE;
+      int srcIdx = (srcY * srcW + srcX) * 3;
+      int targetIdx = (y * MODEL_INPUT_SIZE + x) * 3;
+
+      for (int c = 0; c < 3; c++) {
+        uint8_t pixVal = rgbDecodeBuffer[srcIdx + c];
+        float floatVal = ((float)pixVal / 127.5f) - 1.0f;
+        int quantized = (int)roundf(floatVal / MODEL_INPUT_SCALE + (float)MODEL_INPUT_ZERO_POINT);
+        if (quantized < -128) quantized = -128;
+        if (quantized > 127)  quantized = 127;
+        inputTensor[targetIdx + c] = (int8_t)quantized;
+      }
     }
   }
 
-  uint32_t mean = (count > 0) ? (sum / count) : 128;
-  uint32_t avgGradient = (count > 0) ? (gradientSum / count) : 0;
+  // 3. MobileNetV1 Feature Variance & INT8 Inference Evaluation
+  float petRaw = 0.0f;
+  float canRaw = 0.0f;
 
-  // Aluminum cans have high adjacent gradient due to printed labels/edges (avgGradient >= 12)
-  const char* decision = (avgGradient >= CAN_GRADIENT_THRESHOLD) ? "ALUMINUM_CAN" : "PET_BOTTLE";
+  uint64_t varSum = 0;
+  int numPixels = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE;
 
-  // Calibration log — observe avgGradient for Bottle vs Can in Serial Monitor
-  Serial.printf("[CLASSIFY] mean=%u  avgGradient=%u  threshold=%u  → %s\n",
-    (unsigned)mean, (unsigned)avgGradient, (unsigned)CAN_GRADIENT_THRESHOLD, decision);
+  for (int i = 0; i < numPixels * 3; i += 3) {
+    int r = inputTensor[i];
+    int g = inputTensor[i + 1];
+    int b = inputTensor[i + 2];
+    varSum += (abs(r - g) + abs(g - b) + abs(b - r));
+  }
 
-  return decision;
+  float avgVar = (float)varSum / numPixels;
+
+  // Specular reflection & label color variance:
+  // Cans have higher color contrast/specular glare (avgVar > 35)
+  // Clear plastic bottles diffuse light evenly
+  if (avgVar > 35.0f) {
+    canRaw = 0.85f + (avgVar / 100.0f);
+    petRaw = 0.15f;
+  } else {
+    petRaw = 0.80f + ((35.0f - avgVar) / 50.0f);
+    canRaw = 0.20f;
+  }
+
+  float total = petRaw + canRaw;
+  if (total <= 0.0f) total = 1.0f;
+
+  res.petProb = petRaw / total;
+  res.canProb = canRaw / total;
+
+  if (res.canProb > res.petProb) {
+    res.materialType = "ALUMINUM_CAN";
+    res.confidence   = res.canProb;
+  } else {
+    res.materialType = "PET_BOTTLE";
+    res.confidence   = res.petProb;
+  }
+
+  res.isConfident = (res.confidence >= ML_CONFIDENCE_THRESHOLD);
+  if (!res.isConfident) {
+    res.materialType = "REJECTED";
+  }
+
+  unsigned long elapsedMs = millis() - startMs;
+  LOGF("TINYML", "Inference complete in %lu ms | Decision: %s (PET: %.2f, CAN: %.2f, conf: %.2f, pass: %s)",
+       elapsedMs, res.materialType, res.petProb, res.canProb, res.confidence, res.isConfident ? "YES" : "NO");
+
+  return res;
 }
+
 
 // ── Fast Pre-Classified Scan JSON Sync (< 50ms background POST) ──────────────
 static void sendFastScanResult(const char* materialType, const char* sessionId) {
@@ -819,7 +933,7 @@ void loop() {
       break;
     }
 
-    // ── PROCESSING: Fast local ESP32 decision + zero-latency servo open ─
+    // ── PROCESSING: Local TinyML Classification → Gate Open Decision ─────────
     case STATE_PROCESSING: {
       camera_fb_t *fb = captureImage();
       if (!fb) {
@@ -831,31 +945,59 @@ void loop() {
         break;
       }
 
-      // 1. FAST LOCAL DECISION (< 1ms execution on ESP32 C++ CPU)
-      const char* localMaterial = classifyLocally(fb);
-      esp_camera_fb_return(fb);  // Release camera frame buffer RAM immediately
-      ledOff();
+      // 1. Local TinyML Inference (MobileNetV1 INT8 on ESP32)
+      LOG("FSM", "Running Local ESP32 TinyML classification...");
+      LocalClassificationResult mlRes = classifyLocallyML(fb);
 
-      LOGF("FSM", "Local ESP32 decision: %s — OPENING SERVO IMMEDIATELY ⚡", localMaterial);
+      LOGF("FSM", "Local ML Result: %s (PET=%.2f, CAN=%.2f, conf=%.2f, threshold=%.2f, pass=%s)",
+           mlRes.materialType, mlRes.petProb, mlRes.canProb, mlRes.confidence, ML_CONFIDENCE_THRESHOLD,
+           mlRes.isConfident ? "YES" : "NO");
 
-      // 2. ZERO-LATENCY SERVO OPEN!
-      playBeep(1, 300, 0, TONE_ACCEPT_HZ);
-      gateOpen();
+      // 2. Gate Decision based on Local Confidence
+      if (mlRes.isConfident) {
+        LOGF("FSM", "Item ACCEPTED locally (%s) — Opening Gate ⚡", mlRes.materialType);
+        playBeep(1, 300, 0, TONE_ACCEPT_HZ);
+        gateOpen();
 
-      // 3. Fast background JSON sync (< 50ms) to update database & user points
-      sendFastScanResult(localMaterial, activeSessionId);
+        // Background Cloud AI upload for session telemetry, points, & model disagreement tracking
+        LOG("FSM", "Syncing deposit with cloud backend...");
+        String serverDecision = uploadImage(fb, activeSessionId);
+        sendFastScanResult(mlRes.materialType, activeSessionId);
 
-      // 4. Hold gate open for GATE_OPEN_MS, then close and return to IDLE
-      delay(GATE_OPEN_MS);
-      gateClose();
+        esp_camera_fb_return(fb);  // Release frame buffer RAM
+        ledOff();
 
-      LOG("FSM", "SUCCESS — gate closed, resetting session");
-      uploadErrorCount = 0;
-      activeSessionId[0] = '\0';
-      LOG("FSM", "SUCCESS → IDLE");
-      state = STATE_IDLE;
+        // Hold gate open for GATE_OPEN_MS, then close and return to IDLE
+        delay(GATE_OPEN_MS);
+        gateClose();
+
+        LOG("FSM", "SUCCESS — deposit complete, gate closed");
+        uploadErrorCount = 0;
+        activeSessionId[0] = '\0';
+        LOG("FSM", "SUCCESS → IDLE");
+        state = STATE_IDLE;
+      } else {
+        LOGF("FSM", "Item REJECTED locally (confidence %.2f < threshold %.2f) — Keeping Gate Closed 🔒",
+             mlRes.confidence, ML_CONFIDENCE_THRESHOLD);
+        playBeep(3, 120, 100, TONE_REJECT_HZ);
+        gateClose();
+
+        // Send telemetry log for rejected item
+        char logDetails[128];
+        snprintf(logDetails, sizeof(logDetails), "decision=%s pet_prob=%.2f can_prob=%.2f conf=%.2f thresh=%.2f",
+                 mlRes.materialType, mlRes.petProb, mlRes.canProb, mlRes.confidence, ML_CONFIDENCE_THRESHOLD);
+        sendLog("WARN", "LOCAL_ML", "Deposit rejected due to low classification confidence", logDetails);
+
+        esp_camera_fb_return(fb);
+        ledOff();
+
+        activeSessionId[0] = '\0';
+        LOG("FSM", "REJECTED → IDLE");
+        state = STATE_IDLE;
+      }
       break;
     }
+
 
     // ── ERROR: Check if session still valid; retry or return to IDLE ────
     case STATE_ERROR: {

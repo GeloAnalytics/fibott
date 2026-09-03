@@ -9,7 +9,13 @@
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
 // Appears in boot banner and heartbeat logs in the admin panel.
-#define FIRMWARE_VERSION "1.3.0-2pin"
+#define FIRMWARE_VERSION "1.4.0-esp32-ml"
+
+// ── Local ML Inference Configuration ─────────────────────────────────────────
+// Minimum confidence required to accept local classification decision (0.0 to 1.0).
+// If top class probability < ML_CONFIDENCE_THRESHOLD, item is REJECTED safely.
+#define ML_CONFIDENCE_THRESHOLD 0.60f
+
 
 // ── WiFi Configuration ────────────────────────────────────────────────────────
 // The kiosk must connect to the Fibott open HotSpot ("Fibott" SSID on MikroTik).

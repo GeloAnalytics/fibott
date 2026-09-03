@@ -1,0 +1,22 @@
+{
+  "classes": [
+    "PET_BOTTLE",
+    "ALUMINUM_CAN"
+  ],
+  "input_size": 96,
+  "input_channels": 3,
+  "input_dtype": "int8",
+  "output_dtype": "int8",
+  "input_scale": 0.007843137718737125,
+  "input_zero_point": -1,
+  "output_scale": 0.00390625,
+  "output_zero_point": -128,
+  "val_accuracy": 0.631579,
+  "val_loss": 0.958569,
+  "tflite_size_bytes": 325800,
+  "total_parameters": 236146,
+  "architecture": "MobileNetV1-alpha0.25-96x96-INT8",
+  "train_images": 77,
+  "val_images": 19,
+  "note": "TRAINED ON INTERNET IMAGES. Must be validated on real kiosk captures before production."
+}
