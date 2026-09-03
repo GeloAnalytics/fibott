@@ -14,8 +14,8 @@
 // ── WiFi Configuration ────────────────────────────────────────────────────────
 // The kiosk must connect to the Fibott open HotSpot ("Fibott" SSID on MikroTik).
 // If testing locally, set these to your development WiFi credentials.
-#define WIFI_SSID     "TP-Link_BB6C"
-#define WIFI_PASSWORD "55001373"
+#define WIFI_SSID     "Fibott"
+#define WIFI_PASSWORD ""
 
 // ── Backend API Configuration ─────────────────────────────────────────────────
 // BACKEND_HOST: Vercel hostname WITHOUT https://
