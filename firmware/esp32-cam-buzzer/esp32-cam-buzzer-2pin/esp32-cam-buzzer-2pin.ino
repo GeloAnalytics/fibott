@@ -522,9 +522,12 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     LOGF("UPLOAD", "Classification: label=%s material=%s confidence=%.2f", label, material, confidence);
   }
 
-  String action = doc["servoAction"].as<String>();
-  LOGF("UPLOAD", "Server decision: servoAction=%s", action.c_str());
-  return action;
+    String action = doc["servoAction"].as<String>();
+    LOGF("UPLOAD", "Server decision: servoAction=%s", action.c_str());
+    return action;
+  }
+
+  return "";
 }
 
 // ── WiFi Reconnection Watchdog ────────────────────────────────────────────────
