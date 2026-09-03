@@ -541,9 +541,9 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
 // ── ESP32 Local ML Classifier (MobileNetV1 96x96 INT8 TinyML Engine) ─────────
 static uint8_t *tensorArenaBuffer = nullptr;
-
-static uint8_t *rgbDecodeBuffer = nullptr;
-static bool tfliteInitialized = false;
+static uint8_t *rgbDecodeBuffer   = nullptr;
+static int8_t  *inputTensorBuffer = nullptr;
+static bool tfliteInitialized     = false;
 
 static bool initLocalML() {
   if (tfliteInitialized) return true;
@@ -551,10 +551,13 @@ static bool initLocalML() {
   LOG("TINYML", "Initialising MobileNetV1 96x96 INT8 Local ML Engine...");
   LOGF("TINYML", "Model size: %u bytes | Tensor Arena: %d KB", g_model_data_len, MODEL_TENSOR_ARENA_SIZE / 1024);
 
-  // Allocate Tensor Arena and RGB decode buffer from PSRAM to preserve internal SRAM
+  size_t inputTensorBytes = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * MODEL_INPUT_CHANNELS;
+
+  // Allocate Tensor Arena, RGB decode buffer, and Input Tensor from PSRAM to preserve internal SRAM & stack
   if (psramFound()) {
     tensorArenaBuffer = (uint8_t*) heap_caps_malloc(MODEL_TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     rgbDecodeBuffer   = (uint8_t*) heap_caps_malloc(640 * 480 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    inputTensorBuffer = (int8_t*)  heap_caps_malloc(inputTensorBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   }
 
   if (!tensorArenaBuffer) {
@@ -564,8 +567,11 @@ static bool initLocalML() {
   if (!rgbDecodeBuffer) {
     rgbDecodeBuffer = (uint8_t*) malloc(320 * 240 * 3);
   }
+  if (!inputTensorBuffer) {
+    inputTensorBuffer = (int8_t*) malloc(inputTensorBytes);
+  }
 
-  if (!tensorArenaBuffer || !rgbDecodeBuffer) {
+  if (!tensorArenaBuffer || !rgbDecodeBuffer || !inputTensorBuffer) {
     LOG("TINYML", "ERROR: Could not allocate memory buffers for Local ML inference!");
     return false;
   }
@@ -592,6 +598,11 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     initLocalML();
   }
 
+  if (!inputTensorBuffer || !rgbDecodeBuffer) {
+    LOG("TINYML", "ERROR: Buffers not available for inference");
+    return res;
+  }
+
   unsigned long startMs = millis();
 
   // 1. Decode JPEG to RGB888
@@ -599,19 +610,15 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   int srcW = fb->width;
   int srcH = fb->height;
 
-  if (rgbDecodeBuffer) {
-    decodeOk = fmt2rgb888(fb->buf, fb->len, fb->format, rgbDecodeBuffer);
-  }
+  decodeOk = fmt2rgb888(fb->buf, fb->len, fb->format, rgbDecodeBuffer);
 
   if (!decodeOk) {
     LOG("TINYML", "ERROR: Failed to decode framebuffer to RGB888");
     return res;
   }
 
-  // 2. Preprocess & Quantize to 96x96 INT8 input
+  // 2. Preprocess & Quantize to 96x96 INT8 input (stored in PSRAM buffer, NOT stack)
   // Formula: int8_pix = (int8_t)roundf(((rgb_uint8 / 127.5f) - 1.0f) / MODEL_INPUT_SCALE + MODEL_INPUT_ZERO_POINT)
-  int8_t inputTensor[MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * MODEL_INPUT_CHANNELS];
-
   for (int y = 0; y < MODEL_INPUT_SIZE; y++) {
     int srcY = (y * srcH) / MODEL_INPUT_SIZE;
     for (int x = 0; x < MODEL_INPUT_SIZE; x++) {
@@ -625,7 +632,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
         int quantized = (int)roundf(floatVal / MODEL_INPUT_SCALE + (float)MODEL_INPUT_ZERO_POINT);
         if (quantized < -128) quantized = -128;
         if (quantized > 127)  quantized = 127;
-        inputTensor[targetIdx + c] = (int8_t)quantized;
+        inputTensorBuffer[targetIdx + c] = (int8_t)quantized;
       }
     }
   }
@@ -638,11 +645,12 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   int numPixels = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE;
 
   for (int i = 0; i < numPixels * 3; i += 3) {
-    int r = inputTensor[i];
-    int g = inputTensor[i + 1];
-    int b = inputTensor[i + 2];
+    int r = inputTensorBuffer[i];
+    int g = inputTensorBuffer[i + 1];
+    int b = inputTensorBuffer[i + 2];
     varSum += (abs(r - g) + abs(g - b) + abs(b - r));
   }
+
 
   float avgVar = (float)varSum / numPixels;
 
