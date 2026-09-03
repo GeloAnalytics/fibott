@@ -55,6 +55,7 @@
 //                            Requires ESP32 LEDC hardware PWM (Timer1, Channel1).
 //                            Supports custom pitch frequencies for each event.
 //                            Uses TONE_*_HZ constants below.
+#define PIN_BUZZER          14
 #define BUZZER_TYPE_ACTIVE  1
 #define BUZZER_TYPE_PASSIVE 2
 
