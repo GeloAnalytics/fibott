@@ -322,20 +322,28 @@ export function RecyclingSession() {
         {phase.name === "completed" && (
           <div className="flex flex-col gap-4">
             <div className="flex items-start gap-3">
-              <CheckCircle className="size-6 text-green-500 mt-0.5 shrink-0" />
+              <CheckCircle className="size-6 text-emerald-500 mt-0.5 shrink-0" />
               <div>
-                <p className="font-semibold text-reward-foreground">Deposit successful!</p>
+                <p className="font-semibold text-foreground">Deposit Successful!</p>
                 {phase.pointsAwarded > 0 && (
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    +{phase.pointsAwarded} points added to your balance.
+                  <p className="text-sm text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                    +{phase.pointsAwarded} points added to your account balance!
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Kiosk is ready for another item. Start another deposit or redeem your points below.
+                </p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
-              <Recycle className="size-4" />
-              Recycle Again
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={handleStart} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Recycle className="size-4" />
+                Recycle Another Item
+              </Button>
+              <Button variant="outline" onClick={() => router.push("/dashboard/wallet")}>
+                View Wallet & Vouchers →
+              </Button>
+            </div>
           </div>
         )}
 
