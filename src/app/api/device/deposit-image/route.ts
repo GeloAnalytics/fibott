@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
-import { classifyImage, ClassifierError } from "@/lib/classifier";
+import { classifyImage } from "@/lib/classifier";
 import { processDeposit } from "@/lib/deposit";
 
 // sharp (used by classifyImage) needs the Node.js runtime, not edge.
@@ -21,16 +21,12 @@ export async function POST(req: Request) {
   let sessionId: string | undefined;
   let sessionCode: string | undefined;
 
-  console.log("[DEVICE/DEPOSIT-IMAGE] HANDLER ENTERED");
-
   try {
     let device;
     try {
       device = await validateDeviceApiKey(req, "ESP32_CAM");
-      console.log("[DEVICE/DEPOSIT-IMAGE] DEVICE AUTH OK", { deviceId: device.id });
     } catch (err) {
       if (err instanceof DeviceAuthError) {
-        console.warn("[DEVICE/DEPOSIT-IMAGE] DEVICE AUTH ERROR", { error: err.message });
         return NextResponse.json(
           {
             decision: "REJECT",
@@ -46,7 +42,6 @@ export async function POST(req: Request) {
 
     const form = await req.formData().catch(() => null);
     if (!form) {
-      console.warn("[DEVICE/DEPOSIT-IMAGE] BAD REQUEST - expected multipart/form-data");
       return NextResponse.json(
         {
           decision: "REJECT",
@@ -57,11 +52,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    console.log("[DEVICE/DEPOSIT-IMAGE] REQUEST BODY PARSED");
 
     const image = form.get("image");
     if (!(image instanceof Blob)) {
-      console.warn("[DEVICE/DEPOSIT-IMAGE] BAD REQUEST - missing image file field");
       return NextResponse.json(
         {
           decision: "REJECT",
@@ -73,7 +66,6 @@ export async function POST(req: Request) {
       );
     }
     if (image.size > MAX_IMAGE_BYTES) {
-      console.warn("[DEVICE/DEPOSIT-IMAGE] PAYLOAD TOO LARGE", { size: image.size });
       return NextResponse.json(
         {
           decision: "REJECT",
@@ -97,26 +89,16 @@ export async function POST(req: Request) {
         ? sessionIdRaw
         : undefined;
 
-    console.log("[DEVICE/DEPOSIT-IMAGE] IMAGE RECEIVED", { size: image.size, sessionId, sessionCode });
-
     const imageBuffer = Buffer.from(await image.arrayBuffer());
 
     let classification;
     try {
-      console.log("[DEVICE/DEPOSIT-IMAGE] CLASSIFIER START", { sessionId });
       classification = await classifyImage(imageBuffer);
-      console.log("[DEVICE/DEPOSIT-IMAGE] CLASSIFIER SUCCESS", {
-        sessionId,
-        materialType: classification.materialType,
-        label: classification.label,
-        confidence: classification.confidence,
-      });
     } catch (err) {
-      console.error("[DEVICE/DEPOSIT-IMAGE] CLASSIFIER ERROR", {
+      console.error("[DEVICE/DEPOSIT-IMAGE] classifyImage failed", {
         sessionId,
         sessionCode,
         error: err instanceof Error ? err.message : String(err),
-        code: err instanceof ClassifierError ? err.code : "UNKNOWN",
       });
       return NextResponse.json(
         {
@@ -129,7 +111,6 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("[DEVICE/DEPOSIT-IMAGE] DEPOSIT PROCESSING START", { sessionId, deviceId: device.id });
     const result = await processDeposit({
       deviceId: device.id,
       sessionId,
@@ -137,10 +118,6 @@ export async function POST(req: Request) {
       materialType: classification.materialType,
       classificationLabel: classification.label,
       confidence: classification.confidence,
-    });
-    console.log("[DEVICE/DEPOSIT-IMAGE] DEPOSIT PROCESSING SUCCESS", {
-      sessionId,
-      decision: result.decision,
     });
 
     return NextResponse.json({

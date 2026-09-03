@@ -57,7 +57,7 @@ export async function GET(req: Request) {
   try {
     const device = await validateDeviceApiKey(req, "ESP32_CAM");
 
-    // Rate-limit lastSeenAt DB write to at most once every 30s to keep fast 500ms GET polling lightweight
+    // Rate-limit lastSeenAt DB write to at most once every 30s to keep GET polling lightweight
     if (!device.lastSeenAt || Date.now() - device.lastSeenAt.getTime() > 30000) {
       await prisma.device.update({
         where: { id: device.id },

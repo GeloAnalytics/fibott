@@ -86,11 +86,6 @@ static unsigned long lastHeartbeatMs = 0;
 static unsigned long lastWifiWarnMs  = 0;
 static int uploadErrorCount = 0;
 
-// Non-blocking adaptive polling guard and timers
-static bool sessionPollInProgress = false;
-static unsigned long lastIdlePollMs = 0;
-static unsigned long idleStartTimeMs = 0;
-
 // ── Servo Control (LEDC Timer 0 / Channel 0) ─────────────────────────────────
 // Camera uses Timer 2 / Channel 2, so Timer 0 is safe.
 static void servoSetup() {
@@ -278,8 +273,8 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   }
 
   WiFiClientSecure client;
-  client.setInsecure();    // Skip cert verify — Vercel uses valid Let's Encrypt certs
-  client.setTimeout(8000); // 8s timeout in milliseconds; don't block the FSM
+  client.setInsecure();  // Skip cert verify — Vercel uses valid Let's Encrypt certs
+  client.setTimeout(8);  // Short timeout; don't block the FSM
 
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
     LOGF("TELEMETRY", "ERROR: Could not connect to %s:%d for log", BACKEND_HOST, BACKEND_PORT);
@@ -306,15 +301,7 @@ static void sendLog(const char* level, const char* tag, const char* message, con
 
   // Read HTTP status line (don't block long; just drain)
   String statusLine = client.readStringUntil('\n');
-  statusLine.trim();
-
-  int statusCode = 0;
-  int firstSpace = statusLine.indexOf(' ');
-  if (firstSpace > 0) {
-    statusCode = statusLine.substring(firstSpace + 1).toInt();
-  }
-
-  LOGF("TELEMETRY", "Log sent [%s/%s]: %s | HTTP Status: %d", level, tag, message, statusCode > 0 ? statusCode : 0);
+  LOGF("TELEMETRY", "Log sent [%s/%s]: %s | HTTP: %s", level, tag, message, statusLine.c_str());
   client.stop();
 }
 
@@ -328,7 +315,7 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_MS);
+  client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
 
   LOGF("POLL", "Connecting to %s:%d ...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
@@ -344,74 +331,36 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
   // Read status line
   String statusLine = client.readStringUntil('\n');
-  statusLine.trim();
+  LOGF("POLL", "HTTP Status: %s", statusLine.c_str());
 
-  int statusCode = 0;
-  int firstSpace = statusLine.indexOf(' ');
-  if (firstSpace > 0) {
-    statusCode = statusLine.substring(firstSpace + 1).toInt();
-  }
-
-  if (statusLine.length() == 0) {
-    LOG("POLL", "ERROR: Response timed out or empty status line");
+  // Check for 401 — device API key rejected
+  if (statusLine.indexOf("401") >= 0) {
+    LOG("POLL", "ERROR: 401 Unauthorized — DEVICE_API_KEY in config.h is invalid or device is INACTIVE in DB");
     client.stop();
     return false;
   }
 
-  LOGF("POLL", "HTTP Status: %d", statusCode > 0 ? statusCode : 0);
-
-  // Parse HTTP response headers for Content-Type
-  String contentType = "";
+  // Drain HTTP headers
   while (client.connected()) {
     String line = client.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) break;
-
-    if (line.substring(0, 13).equalsIgnoreCase("Content-Type:")) {
-      contentType = line.substring(13);
-      contentType.trim();
-    }
+    if (line == "\r") break;
   }
-
-  if (contentType.length() > 0) {
-    LOGF("POLL", "Content-Type: %s", contentType.c_str());
-  }
-
   String body = client.readString();
   client.stop();
-  body.trim();
 
-  // Check for 401 — device API key rejected
-  if (statusCode == 401 || statusLine.indexOf("401") >= 0) {
-    LOG("POLL", "ERROR: 401 Unauthorized — DEVICE_API_KEY in config.h is invalid or device is INACTIVE in DB");
-    return false;
-  }
-
+  // Strip chunked-encoding prefix if present (e.g. "83\r\n{...}\r\n0")
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : "";
-
-  bool isHtml = contentType.indexOf("text/html") >= 0 ||
-                body.startsWith("<!DOCTYPE") ||
-                body.startsWith("<!doctype") ||
-                body.startsWith("<html") ||
-                body.indexOf("--next-error-bg") >= 0;
-
-  if (isHtml || jsonBody.length() == 0) {
-    LOG("POLL", "ERROR: Backend returned non-JSON response");
-    String preview = body.substring(0, min((size_t)250, body.length()));
-    preview.replace("\r", "");
-    preview.replace("\n", " ");
-    LOGF("POLL", "Response preview: %s...", preview.c_str());
-    return false;
-  }
+  String jsonBody = (jStart >= 0 && jEnd > jStart)
+                    ? body.substring(jStart, jEnd + 1)
+                    : body;
 
   LOGF("POLL", "Response body: %s", jsonBody.c_str());
 
   JsonDocument doc;
   DeserializationError derr = deserializeJson(doc, jsonBody);
   if (derr != DeserializationError::Ok) {
-    LOGF("POLL", "ERROR: JSON parse failed (%s)", derr.c_str());
+    LOGF("POLL", "ERROR: JSON parse failed (%s) — raw body: %s", derr.c_str(), jsonBody.c_str());
     return false;
   }
 
@@ -467,7 +416,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_MS);
+  client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
 
   LOGF("UPLOAD", "Connecting to %s:%d for image upload...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
@@ -517,68 +466,35 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   client.print(footer);
   client.flush();
 
-  // Read response status line
+  // Read response
   String statusLine = client.readStringUntil('\n');
-  statusLine.trim();
+  LOGF("UPLOAD", "HTTP Status: %s", statusLine.c_str());
 
-  int statusCode = 0;
-  int firstSpace = statusLine.indexOf(' ');
-  if (firstSpace > 0) {
-    statusCode = statusLine.substring(firstSpace + 1).toInt();
+  if (statusLine.indexOf("401") >= 0) {
+    LOG("UPLOAD", "ERROR: 401 Unauthorized — device API key rejected by backend");
+    client.stop();
+    return "";
   }
-
-  if (statusLine.length() == 0) {
-    LOG("UPLOAD", "ERROR: Response timed out or empty response from backend");
-    sendLog("ERROR", "UPLOAD", "Image upload failed — backend connection timeout or no response", sessionId ? sessionId : "none");
+  if (statusLine.indexOf("413") >= 0) {
+    LOG("UPLOAD", "ERROR: 413 Payload Too Large — reduce camera JPEG quality or frame size");
+    client.stop();
+    return "";
+  }
+  if (statusLine.indexOf("502") >= 0) {
+    LOG("UPLOAD", "ERROR: 502 Bad Gateway — classifier service failed on the server side");
     client.stop();
     return "";
   }
 
-  LOGF("UPLOAD", "HTTP Status: %d", statusCode > 0 ? statusCode : 0);
-
-  // Parse HTTP headers for Content-Type
-  String contentType = "";
   while (client.connected()) {
-    String line = client.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) break;
-
-    if (line.substring(0, 13).equalsIgnoreCase("Content-Type:")) {
-      contentType = line.substring(13);
-      contentType.trim();
-    }
+    if (client.readStringUntil('\n') == "\r") break;
   }
-
-  if (contentType.length() > 0) {
-    LOGF("UPLOAD", "Content-Type: %s", contentType.c_str());
-  }
-
   String body = client.readString();
   client.stop();
-  body.trim();
 
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : "";
-
-  bool isHtml = contentType.indexOf("text/html") >= 0 ||
-                body.startsWith("<!DOCTYPE") ||
-                body.startsWith("<!doctype") ||
-                body.startsWith("<html") ||
-                body.indexOf("--next-error-bg") >= 0;
-
-  if (isHtml || jsonBody.length() == 0) {
-    LOGF("UPLOAD", "ERROR: Backend returned non-JSON response (HTML) | HTTP Status: %d", statusCode);
-    String preview = body.substring(0, min((size_t)250, body.length()));
-    preview.replace("\r", "");
-    preview.replace("\n", " ");
-    LOGF("UPLOAD", "Response preview: %s...", preview.c_str());
-
-    char teleDetails[128];
-    snprintf(teleDetails, sizeof(teleDetails), "httpStatus=%d contentType=%.30s", statusCode, contentType.c_str());
-    sendLog("ERROR", "UPLOAD", "Image upload failed — backend returned non-JSON response (HTML)", teleDetails);
-    return "";
-  }
+  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
 
   LOGF("UPLOAD", "Response: %s", jsonBody.c_str());
 
@@ -586,9 +502,6 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   DeserializationError derr = deserializeJson(doc, jsonBody);
   if (derr != DeserializationError::Ok) {
     LOGF("UPLOAD", "ERROR: JSON parse failed (%s)", derr.c_str());
-    char teleDetails[128];
-    snprintf(teleDetails, sizeof(teleDetails), "httpStatus=%d parseErr=%.30s", statusCode, derr.c_str());
-    sendLog("ERROR", "UPLOAD", "Image upload failed — JSON parse error", teleDetails);
     return "";
   }
 
@@ -600,14 +513,9 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     LOGF("UPLOAD", "Classification: label=%s material=%s confidence=%.2f", label, material, confidence);
   }
 
-  const char *action = doc["servoAction"].as<const char *>();
-  if (!action || strlen(action) == 0) {
-    const char *decision = doc["decision"].as<const char *>();
-    action = (decision && strcmp(decision, "ACCEPT") == 0) ? "ACCEPT" : "REJECT";
-  }
-
-  LOGF("UPLOAD", "Server decision: servoAction=%s", action);
-  return String(action);
+  String action = doc["servoAction"].as<String>();
+  LOGF("UPLOAD", "Server decision: servoAction=%s", action.c_str());
+  return action;
 }
 
 // ── WiFi Reconnection Watchdog ────────────────────────────────────────────────
@@ -764,38 +672,16 @@ void loop() {
 
   switch (state) {
 
-    // ── IDLE: Poll for an active kiosk session (Adaptive 500ms Non-Blocking) ────
+    // ── IDLE: Poll for an active kiosk session ──────────────────────────
     case STATE_IDLE: {
       maybeHeartbeat();
 
-      // Overlap Guard: Skip cycle if a poll request is already in progress
-      if (sessionPollInProgress) break;
-
-      unsigned long now = millis();
-      if (idleStartTimeMs == 0) idleStartTimeMs = now;
-
-      // Adaptive window: fast poll for the first SESSION_FAST_WINDOW_MS of idle,
-      // switching to SESSION_POLL_SLOW_MS after prolonged inactivity to conserve network load.
-      unsigned long interval = (now - idleStartTimeMs < SESSION_FAST_WINDOW_MS) ? SESSION_POLL_FAST_MS : SESSION_POLL_SLOW_MS;
-
-      if (now - lastIdlePollMs < interval) {
-        delay(10); // Small yield to keep CPU load low without blocking main loop
-        break;
-      }
-
-      lastIdlePollMs = now;
-      sessionPollInProgress = true;
-
       char sessionId[128] = "";
-      bool found = pollSession(sessionId, sizeof(sessionId));
-      sessionPollInProgress = false;
-
-      if (!found) {
+      if (!pollSession(sessionId, sizeof(sessionId))) {
+        delay(POLL_INTERVAL_MS);
         break;
       }
 
-      // Reset idle window timer upon discovering active session
-      idleStartTimeMs = 0;
       strncpy(activeSessionId, sessionId, sizeof(activeSessionId));
       LOGF("FSM", "IDLE → READY  (session=%s)", activeSessionId);
       state = STATE_READY;
@@ -861,6 +747,7 @@ void loop() {
         snprintf(errorDetails, sizeof(errorDetails),
                  "sessionId=%s consecutiveErrors=%d heap=%u",
                  activeSessionId, uploadErrorCount, ESP.getFreeHeap());
+        sendLog("ERROR", "UPLOAD", "Image upload failed — no response from backend", errorDetails);
 
         if (uploadErrorCount >= 3) {
           LOG("FSM", "WARN: 3+ consecutive upload failures — possible network or backend issue");
