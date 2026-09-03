@@ -525,6 +525,10 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     String action = doc["servoAction"].as<String>();
     LOGF("UPLOAD", "Server decision: servoAction=%s", action.c_str());
     return action;
+  }
+  return "";
+}
+
 // ── Fast Local ESP32 Feature Decision (< 1ms execution in C++) ───────────────
 static const char* classifyLocally(camera_fb_t *fb) {
   if (!fb || !fb->buf || fb->len == 0) return "PET_BOTTLE";
