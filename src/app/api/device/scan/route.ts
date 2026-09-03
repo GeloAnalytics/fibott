@@ -18,31 +18,40 @@ const schema = z.object({
  * classifier.ts itself and calls the same processDeposit() helper.
  */
 export async function POST(req: Request) {
-  let device;
   try {
-    device = await validateDeviceApiKey(req, "ESP32_CAM");
-  } catch (err) {
-    if (err instanceof DeviceAuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+    let device;
+    try {
+      device = await validateDeviceApiKey(req, "ESP32_CAM");
+    } catch (err) {
+      if (err instanceof DeviceAuthError) {
+        return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      throw err;
     }
-    throw err;
+
+    const body = await req.json().catch(() => null);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    }
+
+    const result = await processDeposit({
+      deviceId: device.id,
+      sessionId: parsed.data.sessionId,
+      sessionCode: parsed.data.sessionCode,
+      materialType: parsed.data.materialType,
+      classificationLabel: parsed.data.classificationLabel,
+      confidence: parsed.data.confidence,
+      imageUrl: parsed.data.imageUrl,
+    });
+
+    const servoAction = result.decision === "ACCEPT" ? "ACCEPT" : "REJECT";
+    return NextResponse.json({ ...result, servoAction });
+  } catch (err) {
+    console.error("[DEVICE/SCAN] Error in scan route:", err);
+    return NextResponse.json(
+      { decision: "REJECT", reason: "SERVER_ERROR", servoAction: "REJECT" },
+      { status: 500 }
+    );
   }
-
-  const body = await req.json().catch(() => null);
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-  }
-
-  const result = await processDeposit({
-    deviceId: device.id,
-    sessionId: parsed.data.sessionId,
-    sessionCode: parsed.data.sessionCode,
-    materialType: parsed.data.materialType,
-    classificationLabel: parsed.data.classificationLabel,
-    confidence: parsed.data.confidence,
-    imageUrl: parsed.data.imageUrl,
-  });
-
-  return NextResponse.json(result);
 }
