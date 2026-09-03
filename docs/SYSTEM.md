@@ -1,6 +1,7 @@
 # Fibott System Reference
 
-**Version:** 2.0
+**Version:** 2.1
+**Last updated:** 2026-09-03
 
 **Architecture:** Mobile-first reverse vending kiosk with ESP32-CAM and MikroTik HotSpot vouchers
 

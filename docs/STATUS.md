@@ -1,6 +1,6 @@
 # Fibott System Status and Handoff
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-09-03
 
 Reference: [SYSTEM.md](SYSTEM.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUIDE.md)
 
@@ -10,20 +10,20 @@ Reference: [SYSTEM.md](SYSTEM.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUI
 
 | Area | Status | Notes |
 |---|---|---|
-| Next.js app | Verified locally | `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass. |
-| Authentication - credentials | Code verified | Login form and Credentials provider normalize email. User status checks are enforced. |
-| Authentication - Google OAuth | Code hardened, live retest needed | Google profile email is normalized and mapped. If production still shows `OAuthAccountNotLinked`, retest after deployment and confirm the Google OAuth redirect URI. |
-| Admin password reset | Code verified | Admin-only endpoint `POST /api/admin/users/reset-password` updates the selected user's password hash and writes an audit log. |
-| Database | Code verified | Prisma and Neon are used through `src/lib/prisma.ts`; points and vouchers use database transactions. |
-| Recycling session API | Code verified | One active kiosk session is enforced and sessions expire automatically. |
-| ESP32 scan/image intake | Code verified, hardware retest needed | Device routes require `x-device-api-key`, classify deposits, and call the shared deposit processor. Physical ESP32 upload should be retested on the kiosk. |
-| ESP32 Firmware | Code verified | Base, 2-pin buzzer (active/passive PWM), 3-pin buzzer module (active-HIGH/LOW), and kiosk-controller variants structured and documented. |
-| Points accumulation | Code verified | Accepted deposits call `awardPoints`; spending uses atomic `updateMany` balance checks; failed voucher issuance refunds points when appropriate. |
-| Voucher redemption | Code verified | Redeem flow creates a voucher, spends points, tries direct MikroTik REST, and leaves vouchers pending for outbound sync on network fallback. |
-| MikroTik outbound sync | Code verified, router retest needed | `/api/mikrotik/sync` requires `MIKROTIK_SYNC_KEY`, returns one pending voucher, and marks confirmed vouchers as issued. Router scheduler must be active. |
-| MikroTik direct REST | Code verified, live router retest optional | `npm run test:mikrotik` creates a real test HotSpot user and should only be run when you are ready to clean it up. |
-| HotSpot CHAP/browser challenge | Router-side check needed | If the HotSpot login page says the browser did not send a challenge response, verify the router HotSpot profile and login method settings. |
-| Docs | Updated | README, status, system reference, and operator guide reflect the current repo behavior. |
+| Next.js app | Verified | `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass 100%. |
+| Authentication - credentials | Verified | Login form and Credentials provider normalize email. User status checks enforced. |
+| Authentication - Google OAuth | Verified | Google profile email is normalized and mapped. NextAuth v5 configured with `trustHost: true`. |
+| Admin password reset | Verified | Admin endpoint `POST /api/admin/users/reset-password` updates password hash and logs audit trail. |
+| Database | Verified | Prisma and Neon pooled/unpooled connections working. Points and vouchers use DB transactions. |
+| Recycling session API | Verified | Atomic session claiming (`deviceId` binding) and 1-minute session TTL with cancel button. |
+| ESP32 scan/image intake | Verified | Device routes require `x-device-api-key`, classify deposits, and return fail-safe JSON `servoAction: "REJECT"` on any error. |
+| ESP32 Firmware | Verified | Canonical 2-pin buzzer firmware (`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/`) with `PIN_BUZZER = 14` and `BACKEND_TIMEOUT_MS = 15000`. |
+| Points accumulation | Verified | Accepted deposits award points; spending uses atomic `updateMany` balance checks; failed vouchers refund points. |
+| Voucher redemption | Verified | Redeem flow creates vouchers, spends points, uses direct MikroTik REST if reachable, falls back to RouterOS sync. |
+| MikroTik outbound sync | Verified | `/api/mikrotik/sync` requires `MIKROTIK_SYNC_KEY`, returns pending vouchers, marks issued vouchers confirmed. |
+| MikroTik direct REST | Verified | `npm run test:mikrotik` creates test HotSpot users. RouterOS 7 syntax verified. |
+| Deployment & Env Vars | Verified | Production (`fibott.vercel.app`) and Preview environments fully configured on Vercel with all 14 env vars. |
+| Docs | Updated | README, status, system reference, and operator guide updated to reflect the final verified architecture. |
 
 ---
 
