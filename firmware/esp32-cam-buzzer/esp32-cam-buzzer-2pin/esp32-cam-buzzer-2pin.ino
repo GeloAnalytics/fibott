@@ -414,96 +414,105 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     return "";
   }
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
+  for (int attempt = 1; attempt <= 2; attempt++) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
 
-  LOGF("UPLOAD", "Connecting to %s:%d for image upload...", BACKEND_HOST, BACKEND_PORT);
-  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-    LOG("UPLOAD", "ERROR: TCP connect failed for image upload");
-    LOG("UPLOAD", "  Check: WiFi signal strength, Vercel endpoint reachability");
-    return "";
-  }
+    LOGF("UPLOAD", "Connecting to %s:%d for image upload (attempt %d/2)...", BACKEND_HOST, BACKEND_PORT, attempt);
+    if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
+      LOGF("UPLOAD", "WARN: TCP connect failed on attempt %d/2", attempt);
+      if (attempt < 2) { delay(250); continue; }
+      return "";
+    }
 
-  const char *boundary = "FibottBoundary42";
+    const char *boundary = "FibottBoundary42";
 
-  // Build multipart session ID field
-  String sessionPart;
-  if (sessionId && strlen(sessionId) > 0) {
-    sessionPart  = "--"; sessionPart += boundary; sessionPart += "\r\n";
-    sessionPart += "Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n";
-    sessionPart += sessionId; sessionPart += "\r\n";
-  }
+    // Build multipart session ID field
+    String sessionPart;
+    if (sessionId && strlen(sessionId) > 0) {
+      sessionPart  = "--"; sessionPart += boundary; sessionPart += "\r\n";
+      sessionPart += "Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n";
+      sessionPart += sessionId; sessionPart += "\r\n";
+    }
 
-  // Build image part header
-  String imagePart;
-  imagePart  = "--"; imagePart += boundary; imagePart += "\r\n";
-  imagePart += "Content-Disposition: form-data; name=\"image\"; filename=\"frame.jpg\"\r\n";
-  imagePart += "Content-Type: image/jpeg\r\n\r\n";
+    // Build image part header
+    String imagePart;
+    imagePart  = "--"; imagePart += boundary; imagePart += "\r\n";
+    imagePart += "Content-Disposition: form-data; name=\"image\"; filename=\"frame.jpg\"\r\n";
+    imagePart += "Content-Type: image/jpeg\r\n\r\n";
 
-  String footer = "\r\n--"; footer += boundary; footer += "--\r\n";
+    String footer = "\r\n--"; footer += boundary; footer += "--\r\n";
 
-  size_t contentLen = sessionPart.length() + imagePart.length() + fb->len + footer.length();
+    size_t contentLen = sessionPart.length() + imagePart.length() + fb->len + footer.length();
 
-  LOGF("UPLOAD", "Uploading %u bytes (sessionId=%s)", (unsigned)contentLen, sessionId ? sessionId : "none");
+    LOGF("UPLOAD", "Uploading %u bytes (sessionId=%s)", (unsigned)contentLen, sessionId ? sessionId : "none");
 
-  client.printf("POST /api/device/deposit-image HTTP/1.1\r\n");
-  client.printf("Host: %s\r\n", BACKEND_HOST);
-  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
-  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
-  client.printf("Content-Length: %u\r\n", (unsigned)contentLen);
-  client.printf("Connection: close\r\n\r\n");
+    client.printf("POST /api/device/deposit-image HTTP/1.1\r\n");
+    client.printf("Host: %s\r\n", BACKEND_HOST);
+    client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
+    client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary);
+    client.printf("Content-Length: %u\r\n", (unsigned)contentLen);
+    client.printf("Connection: close\r\n\r\n");
 
-  if (sessionPart.length()) client.print(sessionPart);
-  client.print(imagePart);
+    if (sessionPart.length()) client.print(sessionPart);
+    client.print(imagePart);
 
-  // Stream image in 4KB chunks to avoid RAM overflow
-  const size_t CHUNK = 4096;
-  for (size_t off = 0; off < fb->len; off += CHUNK) {
-    size_t toWrite = min(CHUNK, fb->len - off);
-    client.write(fb->buf + off, toWrite);
-  }
-  client.print(footer);
-  client.flush();
+    // Stream image in 4KB chunks to avoid RAM overflow
+    const size_t CHUNK = 4096;
+    for (size_t off = 0; off < fb->len; off += CHUNK) {
+      size_t toWrite = min(CHUNK, fb->len - off);
+      client.write(fb->buf + off, toWrite);
+    }
+    client.print(footer);
+    client.flush();
 
-  // Read response
-  String statusLine = client.readStringUntil('\n');
-  LOGF("UPLOAD", "HTTP Status: %s", statusLine.c_str());
+    // Read response
+    String statusLine = client.readStringUntil('\n');
+    LOGF("UPLOAD", "HTTP Status: %s", statusLine.c_str());
 
-  if (statusLine.indexOf("401") >= 0) {
-    LOG("UPLOAD", "ERROR: 401 Unauthorized — device API key rejected by backend");
+    if (statusLine.length() == 0) {
+      LOGF("UPLOAD", "WARN: Empty HTTP status on attempt %d/2 (socket closed early) — retrying...", attempt);
+      client.stop();
+      if (attempt < 2) { delay(250); continue; }
+      return "";
+    }
+
+    if (statusLine.indexOf("401") >= 0) {
+      LOG("UPLOAD", "ERROR: 401 Unauthorized — device API key rejected by backend");
+      client.stop();
+      return "";
+    }
+    if (statusLine.indexOf("413") >= 0) {
+      LOG("UPLOAD", "ERROR: 413 Payload Too Large — reduce camera JPEG quality or frame size");
+      client.stop();
+      return "";
+    }
+    if (statusLine.indexOf("502") >= 0) {
+      LOG("UPLOAD", "ERROR: 502 Bad Gateway — classifier service failed on the server side");
+      client.stop();
+      return "";
+    }
+
+    while (client.connected()) {
+      if (client.readStringUntil('\n') == "\r") break;
+    }
+    String body = client.readString();
     client.stop();
-    return "";
-  }
-  if (statusLine.indexOf("413") >= 0) {
-    LOG("UPLOAD", "ERROR: 413 Payload Too Large — reduce camera JPEG quality or frame size");
-    client.stop();
-    return "";
-  }
-  if (statusLine.indexOf("502") >= 0) {
-    LOG("UPLOAD", "ERROR: 502 Bad Gateway — classifier service failed on the server side");
-    client.stop();
-    return "";
-  }
 
-  while (client.connected()) {
-    if (client.readStringUntil('\n') == "\r") break;
-  }
-  String body = client.readString();
-  client.stop();
+    int jStart = body.indexOf('{');
+    int jEnd   = body.lastIndexOf('}');
+    String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
 
-  int jStart = body.indexOf('{');
-  int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
+    LOGF("UPLOAD", "Response: %s", jsonBody.c_str());
 
-  LOGF("UPLOAD", "Response: %s", jsonBody.c_str());
-
-  JsonDocument doc;
-  DeserializationError derr = deserializeJson(doc, jsonBody);
-  if (derr != DeserializationError::Ok) {
-    LOGF("UPLOAD", "ERROR: JSON parse failed (%s)", derr.c_str());
-    return "";
-  }
+    JsonDocument doc;
+    DeserializationError derr = deserializeJson(doc, jsonBody);
+    if (derr != DeserializationError::Ok) {
+      LOGF("UPLOAD", "ERROR: JSON parse failed (%s)", derr.c_str());
+      if (attempt < 2) { delay(250); continue; }
+      return "";
+    }
 
   // Log classification result if available
   if (doc["classification"].is<JsonObject>()) {
