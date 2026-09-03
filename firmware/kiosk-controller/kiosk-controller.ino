@@ -97,7 +97,7 @@ static bool buttonPressed(int pin) {
 static String claimSession() {
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(10);
+  client.setTimeout(10000); // 10s timeout in milliseconds
 
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
     Serial.println("[http] claimSession: connect failed");

@@ -79,8 +79,9 @@
 // Increase BACKEND_TIMEOUT_S if you experience frequent upload timeouts on slow
 // WiFi. Decrease POLL_INTERVAL_MS for faster session detection (uses more power).
 
-// HTTP connection + read timeout in seconds for WiFiClientSecure operations.
-#define BACKEND_TIMEOUT_S 15
+// HTTP connection + read timeout in milliseconds for WiFiClientSecure operations (Stream::setTimeout takes ms).
+#define BACKEND_TIMEOUT_S  15
+#define BACKEND_TIMEOUT_MS (BACKEND_TIMEOUT_S * 1000)
 
 // How often to poll /api/kiosk/session while in IDLE state (milliseconds).
 #define POLL_INTERVAL_MS  2000

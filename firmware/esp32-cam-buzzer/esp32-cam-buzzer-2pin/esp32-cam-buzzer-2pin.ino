@@ -273,8 +273,8 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   }
 
   WiFiClientSecure client;
-  client.setInsecure();  // Skip cert verify — Vercel uses valid Let's Encrypt certs
-  client.setTimeout(8);  // Short timeout; don't block the FSM
+  client.setInsecure();    // Skip cert verify — Vercel uses valid Let's Encrypt certs
+  client.setTimeout(8000); // 8s timeout in milliseconds; don't block the FSM
 
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
     LOGF("TELEMETRY", "ERROR: Could not connect to %s:%d for log", BACKEND_HOST, BACKEND_PORT);
@@ -301,7 +301,15 @@ static void sendLog(const char* level, const char* tag, const char* message, con
 
   // Read HTTP status line (don't block long; just drain)
   String statusLine = client.readStringUntil('\n');
-  LOGF("TELEMETRY", "Log sent [%s/%s]: %s | HTTP: %s", level, tag, message, statusLine.c_str());
+  statusLine.trim();
+
+  int statusCode = 0;
+  int firstSpace = statusLine.indexOf(' ');
+  if (firstSpace > 0) {
+    statusCode = statusLine.substring(firstSpace + 1).toInt();
+  }
+
+  LOGF("TELEMETRY", "Log sent [%s/%s]: %s | HTTP Status: %d", level, tag, message, statusCode > 0 ? statusCode : 0);
   client.stop();
 }
 
@@ -315,7 +323,7 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_S);
+  client.setTimeout(BACKEND_TIMEOUT_MS);
 
   LOGF("POLL", "Connecting to %s:%d ...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
@@ -331,36 +339,74 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
   // Read status line
   String statusLine = client.readStringUntil('\n');
-  LOGF("POLL", "HTTP Status: %s", statusLine.c_str());
+  statusLine.trim();
 
-  // Check for 401 — device API key rejected
-  if (statusLine.indexOf("401") >= 0) {
-    LOG("POLL", "ERROR: 401 Unauthorized — DEVICE_API_KEY in config.h is invalid or device is INACTIVE in DB");
+  int statusCode = 0;
+  int firstSpace = statusLine.indexOf(' ');
+  if (firstSpace > 0) {
+    statusCode = statusLine.substring(firstSpace + 1).toInt();
+  }
+
+  if (statusLine.length() == 0) {
+    LOG("POLL", "ERROR: Response timed out or empty status line");
     client.stop();
     return false;
   }
 
-  // Drain HTTP headers
+  LOGF("POLL", "HTTP Status: %d", statusCode > 0 ? statusCode : 0);
+
+  // Parse HTTP response headers for Content-Type
+  String contentType = "";
   while (client.connected()) {
     String line = client.readStringUntil('\n');
-    if (line == "\r") break;
+    line.trim();
+    if (line.length() == 0) break;
+
+    if (line.substring(0, 13).equalsIgnoreCase("Content-Type:")) {
+      contentType = line.substring(13);
+      contentType.trim();
+    }
   }
+
+  if (contentType.length() > 0) {
+    LOGF("POLL", "Content-Type: %s", contentType.c_str());
+  }
+
   String body = client.readString();
   client.stop();
+  body.trim();
 
-  // Strip chunked-encoding prefix if present (e.g. "83\r\n{...}\r\n0")
+  // Check for 401 — device API key rejected
+  if (statusCode == 401 || statusLine.indexOf("401") >= 0) {
+    LOG("POLL", "ERROR: 401 Unauthorized — DEVICE_API_KEY in config.h is invalid or device is INACTIVE in DB");
+    return false;
+  }
+
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart)
-                    ? body.substring(jStart, jEnd + 1)
-                    : body;
+  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : "";
+
+  bool isHtml = contentType.indexOf("text/html") >= 0 ||
+                body.startsWith("<!DOCTYPE") ||
+                body.startsWith("<!doctype") ||
+                body.startsWith("<html") ||
+                body.indexOf("--next-error-bg") >= 0;
+
+  if (isHtml || jsonBody.length() == 0) {
+    LOG("POLL", "ERROR: Backend returned non-JSON response");
+    String preview = body.substring(0, min((size_t)250, body.length()));
+    preview.replace("\r", "");
+    preview.replace("\n", " ");
+    LOGF("POLL", "Response preview: %s...", preview.c_str());
+    return false;
+  }
 
   LOGF("POLL", "Response body: %s", jsonBody.c_str());
 
   JsonDocument doc;
   DeserializationError derr = deserializeJson(doc, jsonBody);
   if (derr != DeserializationError::Ok) {
-    LOGF("POLL", "ERROR: JSON parse failed (%s) — raw body: %s", derr.c_str(), jsonBody.c_str());
+    LOGF("POLL", "ERROR: JSON parse failed (%s)", derr.c_str());
     return false;
   }
 
@@ -416,7 +462,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_S);
+  client.setTimeout(BACKEND_TIMEOUT_MS);
 
   LOGF("UPLOAD", "Connecting to %s:%d for image upload...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
@@ -466,35 +512,63 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   client.print(footer);
   client.flush();
 
-  // Read response
+  // Read response status line
   String statusLine = client.readStringUntil('\n');
-  LOGF("UPLOAD", "HTTP Status: %s", statusLine.c_str());
+  statusLine.trim();
 
-  if (statusLine.indexOf("401") >= 0) {
-    LOG("UPLOAD", "ERROR: 401 Unauthorized — device API key rejected by backend");
-    client.stop();
-    return "";
+  int statusCode = 0;
+  int firstSpace = statusLine.indexOf(' ');
+  if (firstSpace > 0) {
+    statusCode = statusLine.substring(firstSpace + 1).toInt();
   }
-  if (statusLine.indexOf("413") >= 0) {
-    LOG("UPLOAD", "ERROR: 413 Payload Too Large — reduce camera JPEG quality or frame size");
-    client.stop();
-    return "";
-  }
-  if (statusLine.indexOf("502") >= 0) {
-    LOG("UPLOAD", "ERROR: 502 Bad Gateway — classifier service failed on the server side");
+
+  if (statusLine.length() == 0) {
+    LOG("UPLOAD", "ERROR: Response timed out or empty response from backend");
     client.stop();
     return "";
   }
 
+  LOGF("UPLOAD", "HTTP Status: %d", statusCode > 0 ? statusCode : 0);
+
+  // Parse HTTP headers for Content-Type
+  String contentType = "";
   while (client.connected()) {
-    if (client.readStringUntil('\n') == "\r") break;
+    String line = client.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) break;
+
+    if (line.substring(0, 13).equalsIgnoreCase("Content-Type:")) {
+      contentType = line.substring(13);
+      contentType.trim();
+    }
   }
+
+  if (contentType.length() > 0) {
+    LOGF("UPLOAD", "Content-Type: %s", contentType.c_str());
+  }
+
   String body = client.readString();
   client.stop();
+  body.trim();
 
   int jStart = body.indexOf('{');
   int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
+  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : "";
+
+  bool isHtml = contentType.indexOf("text/html") >= 0 ||
+                body.startsWith("<!DOCTYPE") ||
+                body.startsWith("<!doctype") ||
+                body.startsWith("<html") ||
+                body.indexOf("--next-error-bg") >= 0;
+
+  if (isHtml || jsonBody.length() == 0) {
+    LOG("UPLOAD", "ERROR: Backend returned non-JSON response");
+    String preview = body.substring(0, min((size_t)250, body.length()));
+    preview.replace("\r", "");
+    preview.replace("\n", " ");
+    LOGF("UPLOAD", "Response preview: %s...", preview.c_str());
+    return "";
+  }
 
   LOGF("UPLOAD", "Response: %s", jsonBody.c_str());
 
@@ -513,9 +587,14 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     LOGF("UPLOAD", "Classification: label=%s material=%s confidence=%.2f", label, material, confidence);
   }
 
-  String action = doc["servoAction"].as<String>();
-  LOGF("UPLOAD", "Server decision: servoAction=%s", action.c_str());
-  return action;
+  const char *action = doc["servoAction"].as<const char *>();
+  if (!action || strlen(action) == 0) {
+    const char *decision = doc["decision"].as<const char *>();
+    action = (decision && strcmp(decision, "ACCEPT") == 0) ? "ACCEPT" : "REJECT";
+  }
+
+  LOGF("UPLOAD", "Server decision: servoAction=%s", action);
+  return String(action);
 }
 
 // ── WiFi Reconnection Watchdog ────────────────────────────────────────────────
