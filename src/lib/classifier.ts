@@ -1,11 +1,35 @@
-import * as tf from "@tensorflow/tfjs";
-import * as mobilenet from "@tensorflow-models/mobilenet";
-import sharp from "sharp";
 import fs from "fs";
 import path from "path";
 import type { MaterialType } from "@/generated/prisma/enums";
+import type * as tfTypes from "@tensorflow/tfjs";
+import type * as mobilenetTypes from "@tensorflow-models/mobilenet";
 
 const IMAGE_SIZE = 224;
+
+/**
+ * Lazy import helpers to prevent heavy native C++ binaries (Sharp) and TensorFlow.js
+ * from throwing uncaught module evaluation exceptions at route file import time.
+ */
+let tfModulePromise: Promise<typeof import("@tensorflow/tfjs")> | null = null;
+function getTf() {
+  if (!tfModulePromise) {
+    tfModulePromise = import("@tensorflow/tfjs");
+  }
+  return tfModulePromise;
+}
+
+let mobilenetModulePromise: Promise<typeof import("@tensorflow-models/mobilenet")> | null = null;
+function getMobilenet() {
+  if (!mobilenetModulePromise) {
+    mobilenetModulePromise = import("@tensorflow-models/mobilenet");
+  }
+  return mobilenetModulePromise;
+}
+
+async function getSharp() {
+  const mod = await import("sharp");
+  return mod.default || mod;
+}
 
 /**
  * Confidence floor below which we don't trust the top prediction at all —
@@ -58,11 +82,12 @@ interface SerializedHead {
 }
 
 let backendReady: Promise<void> | null = null;
-let modelPromise: Promise<mobilenet.MobileNet> | null = null;
+let modelPromise: Promise<mobilenetTypes.MobileNet> | null = null;
 
 function ensureBackend(): Promise<void> {
   if (!backendReady) {
     backendReady = (async () => {
+      const tf = await getTf();
       await tf.setBackend("cpu");
       await tf.ready();
     })();
@@ -70,16 +95,21 @@ function ensureBackend(): Promise<void> {
   return backendReady;
 }
 
-function loadModel(): Promise<mobilenet.MobileNet> {
+function loadModel(): Promise<mobilenetTypes.MobileNet> {
   if (!modelPromise) {
-    modelPromise = ensureBackend().then(() =>
-      mobilenet.load({ version: 2, alpha: 1.0 })
-    );
+    modelPromise = (async () => {
+      await ensureBackend();
+      const mobilenet = await getMobilenet();
+      return await mobilenet.load({ version: 2, alpha: 1.0 });
+    })();
   }
   return modelPromise;
 }
 
-async function decodeToTensor(imageBuffer: Buffer): Promise<tf.Tensor3D> {
+async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
+  const sharp = await getSharp();
+  const tf = await getTf();
+
   const { data, info } = await sharp(imageBuffer)
     .resize(IMAGE_SIZE, IMAGE_SIZE, { fit: "fill" })
     .removeAlpha()
@@ -135,17 +165,18 @@ export async function embedImage(imageBuffer: Buffer): Promise<Float32Array> {
   }
 }
 
-let fineTunedHeadPromise: Promise<{ model: tf.LayersModel; labels: string[] } | null> | null = null;
+let fineTunedHeadPromise: Promise<{ model: tfTypes.LayersModel; labels: string[] } | null> | null = null;
 
-function loadFineTunedHead(): Promise<{ model: tf.LayersModel; labels: string[] } | null> {
+function loadFineTunedHead(): Promise<{ model: tfTypes.LayersModel; labels: string[] } | null> {
   if (!fineTunedHeadPromise) {
     fineTunedHeadPromise = (async () => {
       if (!fs.existsSync(FINE_TUNED_HEAD_PATH)) return null;
 
       const raw: SerializedHead = JSON.parse(fs.readFileSync(FINE_TUNED_HEAD_PATH, "utf-8"));
       await ensureBackend();
+      const tf = await getTf();
 
-      const layers: tf.layers.Layer[] = raw.hiddenUnits
+      const layers: tfTypes.layers.Layer[] = raw.hiddenUnits
         ? [
             tf.layers.dense({ inputShape: [raw.inputDim], units: raw.hiddenUnits, activation: "relu" }),
             tf.layers.dropout({ rate: 0 }), // no dropout at inference
@@ -163,16 +194,16 @@ function loadFineTunedHead(): Promise<{ model: tf.LayersModel; labels: string[] 
 }
 
 async function classifyWithFineTunedHead(
-  head: tf.LayersModel,
+  head: tfTypes.LayersModel,
   headLabels: string[],
   imageBuffer: Buffer
 ): Promise<ClassificationResult> {
   const model = await loadModel();
   const tensor = await decodeToTensor(imageBuffer);
   try {
-    const embedding = model.infer(tensor, true) as tf.Tensor2D;
+    const embedding = model.infer(tensor, true) as tfTypes.Tensor2D;
     try {
-      const scores = head.predict(embedding) as tf.Tensor;
+      const scores = head.predict(embedding) as tfTypes.Tensor;
       try {
         const values = (await scores.data()) as Float32Array;
         let bestIdx = 0;
@@ -200,18 +231,49 @@ async function classifyWithFineTunedHead(
   }
 }
 
+export class ClassifierError extends Error {
+  code: "CLASSIFIER_UNAVAILABLE" | "IMAGE_PROCESSING_ERROR";
+  constructor(
+    code: "CLASSIFIER_UNAVAILABLE" | "IMAGE_PROCESSING_ERROR",
+    message: string,
+    public override cause?: unknown
+  ) {
+    super(message);
+    this.name = "ClassifierError";
+    this.code = code;
+  }
+}
+
 export async function classifyImage(imageBuffer: Buffer): Promise<ClassificationResult> {
-  const loaded = await loadFineTunedHead();
-  if (loaded) {
-    return classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+  if (!imageBuffer || imageBuffer.length === 0) {
+    throw new ClassifierError("IMAGE_PROCESSING_ERROR", "Empty image buffer provided");
   }
 
-  const model = await loadModel();
-  const tensor = await decodeToTensor(imageBuffer);
   try {
-    const predictions = await model.classify(tensor, 5);
-    return mapPrediction(predictions);
-  } finally {
-    tensor.dispose();
+    const loaded = await loadFineTunedHead();
+    if (loaded) {
+      return await classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+    }
+
+    const model = await loadModel();
+    const tensor = await decodeToTensor(imageBuffer);
+    try {
+      const predictions = await model.classify(tensor, 5);
+      return mapPrediction(predictions);
+    } finally {
+      tensor.dispose();
+    }
+  } catch (err) {
+    console.error("[CLASSIFIER] TensorFlow/Sharp processing error:", {
+      bufferLength: imageBuffer.length,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    if (err instanceof ClassifierError) throw err;
+    throw new ClassifierError(
+      "CLASSIFIER_UNAVAILABLE",
+      "Classification engine failed to process image",
+      err
+    );
   }
 }

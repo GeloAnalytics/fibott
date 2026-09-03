@@ -57,16 +57,55 @@ export async function GET(req: Request) {
   try {
     const device = await validateDeviceApiKey(req, "ESP32_CAM");
 
-    await prisma.device.update({
-      where: { id: device.id },
-      data: { lastSeenAt: new Date() },
-    });
+    // Rate-limit lastSeenAt DB write to at most once every 30s to keep GET polling lightweight
+    if (!device.lastSeenAt || Date.now() - device.lastSeenAt.getTime() > 30000) {
+      await prisma.device.update({
+        where: { id: device.id },
+        data: { lastSeenAt: new Date() },
+      });
+    }
 
     await expireStale();
 
-    const active = await prisma.depositSession.findFirst({
-      where: { status: "ACTIVE", expiresAt: { gt: new Date() } },
+    // 1. Check if an active session is already bound to this specific kiosk
+    let active = await prisma.depositSession.findFirst({
+      where: {
+        status: "ACTIVE",
+        expiresAt: { gt: new Date() },
+        deviceId: device.id,
+      },
+      orderBy: { createdAt: "desc" },
     });
+
+    // 2. If no session is bound to this kiosk, claim an unassigned active session (deviceId: null) ATOMICALLY
+    if (!active) {
+      const unassigned = await prisma.depositSession.findFirst({
+        where: {
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+          deviceId: null,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (unassigned) {
+        // Atomic update: only succeeds if deviceId is STILL null at the exact moment of database write
+        const claimed = await prisma.depositSession.updateMany({
+          where: {
+            id: unassigned.id,
+            status: "ACTIVE",
+            deviceId: null,
+          },
+          data: { deviceId: device.id },
+        });
+
+        if (claimed.count > 0) {
+          active = await prisma.depositSession.findUnique({
+            where: { id: unassigned.id },
+          });
+        }
+      }
+    }
 
     if (!active) return NextResponse.json({ active: false });
 
