@@ -200,18 +200,49 @@ async function classifyWithFineTunedHead(
   }
 }
 
+export class ClassifierError extends Error {
+  code: "CLASSIFIER_UNAVAILABLE" | "IMAGE_PROCESSING_ERROR";
+  constructor(
+    code: "CLASSIFIER_UNAVAILABLE" | "IMAGE_PROCESSING_ERROR",
+    message: string,
+    public override cause?: unknown
+  ) {
+    super(message);
+    this.name = "ClassifierError";
+    this.code = code;
+  }
+}
+
 export async function classifyImage(imageBuffer: Buffer): Promise<ClassificationResult> {
-  const loaded = await loadFineTunedHead();
-  if (loaded) {
-    return classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+  if (!imageBuffer || imageBuffer.length === 0) {
+    throw new ClassifierError("IMAGE_PROCESSING_ERROR", "Empty image buffer provided");
   }
 
-  const model = await loadModel();
-  const tensor = await decodeToTensor(imageBuffer);
   try {
-    const predictions = await model.classify(tensor, 5);
-    return mapPrediction(predictions);
-  } finally {
-    tensor.dispose();
+    const loaded = await loadFineTunedHead();
+    if (loaded) {
+      return await classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+    }
+
+    const model = await loadModel();
+    const tensor = await decodeToTensor(imageBuffer);
+    try {
+      const predictions = await model.classify(tensor, 5);
+      return mapPrediction(predictions);
+    } finally {
+      tensor.dispose();
+    }
+  } catch (err) {
+    console.error("[CLASSIFIER] TensorFlow/Sharp processing error:", {
+      bufferLength: imageBuffer.length,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    if (err instanceof ClassifierError) throw err;
+    throw new ClassifierError(
+      "CLASSIFIER_UNAVAILABLE",
+      "Classification engine failed to process image",
+      err
+    );
   }
 }

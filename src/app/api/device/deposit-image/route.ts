@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
-import { classifyImage } from "@/lib/classifier";
+import { classifyImage, ClassifierError } from "@/lib/classifier";
 import { processDeposit } from "@/lib/deposit";
 
 // sharp (used by classifyImage) needs the Node.js runtime, not edge.
@@ -95,15 +95,20 @@ export async function POST(req: Request) {
     try {
       classification = await classifyImage(imageBuffer);
     } catch (err) {
-      console.error("classifyImage failed", { sessionId, sessionCode, err });
+      console.error("[DEVICE/DEPOSIT-IMAGE] classifyImage failed", {
+        sessionId,
+        sessionCode,
+        error: err instanceof Error ? err.message : String(err),
+        code: err instanceof ClassifierError ? err.code : "UNKNOWN",
+      });
       return NextResponse.json(
         {
           decision: "REJECT",
-          reason: "CLASSIFICATION_FAILED",
-          error: "Classification failed",
+          reason: "SERVER_ERROR",
+          error: "Classifier engine unavailable",
           servoAction: "REJECT",
         },
-        { status: 502 }
+        { status: 500 }
       );
     }
 
@@ -123,7 +128,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const errObj = error instanceof Error ? error : new Error(String(error));
-    console.error("Unhandled error in deposit-image route:", {
+    console.error("[DEVICE/DEPOSIT-IMAGE] Unhandled error", {
       sessionId,
       sessionCode,
       error: errObj.message,
@@ -133,6 +138,7 @@ export async function POST(req: Request) {
       {
         decision: "REJECT",
         reason: "SERVER_ERROR",
+        error: "Internal server error",
         servoAction: "REJECT",
       },
       { status: 500 }

@@ -524,6 +524,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
   if (statusLine.length() == 0) {
     LOG("UPLOAD", "ERROR: Response timed out or empty response from backend");
+    sendLog("ERROR", "UPLOAD", "Image upload failed — backend connection timeout or no response", sessionId ? sessionId : "none");
     client.stop();
     return "";
   }
@@ -562,11 +563,15 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
                 body.indexOf("--next-error-bg") >= 0;
 
   if (isHtml || jsonBody.length() == 0) {
-    LOG("UPLOAD", "ERROR: Backend returned non-JSON response");
+    LOGF("UPLOAD", "ERROR: Backend returned non-JSON response (HTML) | HTTP Status: %d", statusCode);
     String preview = body.substring(0, min((size_t)250, body.length()));
     preview.replace("\r", "");
     preview.replace("\n", " ");
     LOGF("UPLOAD", "Response preview: %s...", preview.c_str());
+
+    char teleDetails[128];
+    snprintf(teleDetails, sizeof(teleDetails), "httpStatus=%d contentType=%.30s", statusCode, contentType.c_str());
+    sendLog("ERROR", "UPLOAD", "Image upload failed — backend returned non-JSON response (HTML)", teleDetails);
     return "";
   }
 
@@ -576,6 +581,9 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   DeserializationError derr = deserializeJson(doc, jsonBody);
   if (derr != DeserializationError::Ok) {
     LOGF("UPLOAD", "ERROR: JSON parse failed (%s)", derr.c_str());
+    char teleDetails[128];
+    snprintf(teleDetails, sizeof(teleDetails), "httpStatus=%d parseErr=%.30s", statusCode, derr.c_str());
+    sendLog("ERROR", "UPLOAD", "Image upload failed — JSON parse error", teleDetails);
     return "";
   }
 
@@ -826,7 +834,6 @@ void loop() {
         snprintf(errorDetails, sizeof(errorDetails),
                  "sessionId=%s consecutiveErrors=%d heap=%u",
                  activeSessionId, uploadErrorCount, ESP.getFreeHeap());
-        sendLog("ERROR", "UPLOAD", "Image upload failed — no response from backend", errorDetails);
 
         if (uploadErrorCount >= 3) {
           LOG("FSM", "WARN: 3+ consecutive upload failures — possible network or backend issue");
