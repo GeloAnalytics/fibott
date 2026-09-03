@@ -86,7 +86,8 @@
 #define BACKEND_TIMEOUT_MS (BACKEND_TIMEOUT_S * 1000)   // 15 000 ms — use this in setTimeout()
 
 // How often to poll /api/kiosk/session while in IDLE state (milliseconds).
-#define POLL_INTERVAL_MS  2000
+// Set to 500ms for fast session detection latency.
+#define POLL_INTERVAL_MS  500
 
 // How long the gate stays open after an ACCEPT decision (milliseconds).
 // Adjust based on your chute mechanism — 3 seconds is typical for a single item.

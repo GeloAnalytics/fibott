@@ -278,6 +278,10 @@ export class ClassifierError extends Error {
   }
 }
 
+export function prewarmClassifier(): void {
+  loadModel().catch(() => {});
+}
+
 export async function classifyImage(imageBuffer: Buffer): Promise<ClassificationResult> {
   if (!imageBuffer || imageBuffer.length === 0) {
     throw new ClassifierError("IMAGE_PROCESSING_ERROR", "Empty image buffer provided");

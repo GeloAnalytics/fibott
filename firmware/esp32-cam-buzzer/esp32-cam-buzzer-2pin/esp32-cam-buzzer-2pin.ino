@@ -607,6 +607,10 @@ void setup() {
   }
 
   // ── WiFi ─────────────────────────────────────────────────────────────
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);  // Disable Wi-Fi modem sleep for 10x lower packet latency
+
   LOGF("WIFI", "Connecting to SSID: %s ...", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -693,16 +697,14 @@ void loop() {
       LOG("FSM", "READY — prompting user to place item");
       playBeep(1, 100, 0, TONE_READY_HZ);  // 1 mid prompt beep
 
-      // Rapid LED blink: "place item now"
-      LOG("FSM", "READY — LED blink sequence (place item in front of camera)");
-      for (int i = 0; i < 6; i++) {
-        ledOn();  delay(200);
-        ledOff(); delay(200);
+      // Fast LED blink: "place item now"
+      for (int i = 0; i < 2; i++) {
+        ledOn();  delay(150);
+        ledOff(); delay(150);
       }
 
-      // 2-second steady pause for user to position item
-      LOG("FSM", "READY — 2s pause (user positions item)");
-      delay(2000);
+      // 0.5s pause for positioning
+      delay(500);
 
       LOG("FSM", "READY → PROCESSING (capturing image)");
       ledOn();  // LED stays on during capture/upload

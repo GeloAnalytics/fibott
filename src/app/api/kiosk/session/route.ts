@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
+import { prewarmClassifier } from "@/lib/classifier";
 
 const SESSION_TTL_MS = 1 * 60 * 1000; // 1 minute — users must deposit within this window
 
@@ -38,6 +39,9 @@ export async function POST() {
       expiresAt,
     },
   });
+
+  // Pre-warm AI model asynchronously while user prepares to deposit item
+  prewarmClassifier();
 
   return NextResponse.json(
     { sessionId: depositSession.id, expiresAt: depositSession.expiresAt },
