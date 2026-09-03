@@ -107,20 +107,54 @@ function loadModel(): Promise<mobilenetTypes.MobileNet> {
 }
 
 async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
-  const sharp = await getSharp();
   const tf = await getTf();
 
-  const { data, info } = await sharp(imageBuffer)
-    .resize(IMAGE_SIZE, IMAGE_SIZE, { fit: "fill" })
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  // 1. Try decoding with Sharp first
+  try {
+    const sharp = await getSharp();
+    const { data, info } = await sharp(imageBuffer)
+      .resize(IMAGE_SIZE, IMAGE_SIZE, { fit: "fill" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-  if (info.channels !== 3) {
-    throw new Error(`Expected 3 color channels after decode, got ${info.channels}`);
+    if (info.channels === 3) {
+      return tf.tensor3d(new Int32Array(data), [info.height, info.width, 3], "int32");
+    }
+  } catch (sharpErr) {
+    console.warn("[CLASSIFIER] Sharp decode failed, falling back to pure-JS jpeg-js decoder:", {
+      error: sharpErr instanceof Error ? sharpErr.message : String(sharpErr),
+    });
   }
 
-  return tf.tensor3d(new Int32Array(data), [info.height, info.width, 3], "int32");
+  // 2. Pure JavaScript fallback: jpeg-js (zero C++ native shared library dependencies)
+  const jpegMod = await import("jpeg-js");
+  const jpeg = jpegMod.default || jpegMod;
+  const rawDecoded = jpeg.decode(imageBuffer, { useTArray: true, formatAsRGBA: false });
+
+  const srcWidth = rawDecoded.width;
+  const srcHeight = rawDecoded.height;
+  const srcData = rawDecoded.data;
+  const isRGBA = srcData.length === srcWidth * srcHeight * 4;
+  const step = isRGBA ? 4 : 3;
+
+  const targetData = new Int32Array(IMAGE_SIZE * IMAGE_SIZE * 3);
+
+  // Nearest-neighbor resize to 224x224 RGB
+  for (let y = 0; y < IMAGE_SIZE; y++) {
+    const srcY = Math.floor((y * srcHeight) / IMAGE_SIZE);
+    for (let x = 0; x < IMAGE_SIZE; x++) {
+      const srcX = Math.floor((x * srcWidth) / IMAGE_SIZE);
+      const srcIdx = (srcY * srcWidth + srcX) * step;
+      const targetIdx = (y * IMAGE_SIZE + x) * 3;
+
+      targetData[targetIdx] = srcData[srcIdx];         // R
+      targetData[targetIdx + 1] = srcData[srcIdx + 1]; // G
+      targetData[targetIdx + 2] = srcData[srcIdx + 2]; // B
+    }
+  }
+
+  return tf.tensor3d(targetData, [IMAGE_SIZE, IMAGE_SIZE, 3], "int32");
 }
 
 function mapPrediction(
