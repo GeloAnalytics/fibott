@@ -75,16 +75,19 @@
 // It is active-LOW: writing LOW turns it ON, writing HIGH turns it OFF.
 #define PIN_LED_STATUS 33
 
-// ── System Timing Constants ───────────────────────────────────────────────────
-// Increase BACKEND_TIMEOUT_S if you experience frequent upload timeouts on slow
-// WiFi. Decrease POLL_INTERVAL_MS for faster session detection (uses more power).
+// ── Session Polling Timing Constants ──────────────────────────────────────────
+// Adaptive polling: poll fast (500ms) when waiting for an active user session,
+// or fallback to 1000ms after prolonged inactivity to minimize server load.
+#define SESSION_POLL_FAST_MS     500   // Fast poll interval in IDLE state (0-500ms detection latency)
+#define SESSION_POLL_SLOW_MS    1000   // Secondary idle interval after 60s of inactivity
+#define SESSION_FAST_WINDOW_MS 60000   // Time window (ms) to remain in fast poll mode
+#define POLL_INTERVAL_FAST_MS   SESSION_POLL_FAST_MS
+#define POLL_INTERVAL_SLOW_MS   SESSION_POLL_SLOW_MS
+#define POLL_INTERVAL_MS        SESSION_POLL_FAST_MS  // Default polling interval for backward compatibility
 
 // HTTP connection + read timeout in milliseconds for WiFiClientSecure operations (Stream::setTimeout takes ms).
 #define BACKEND_TIMEOUT_S  15
 #define BACKEND_TIMEOUT_MS (BACKEND_TIMEOUT_S * 1000)
-
-// How often to poll /api/kiosk/session while in IDLE state (milliseconds).
-#define POLL_INTERVAL_MS  2000
 
 // How long the gate stays open after an ACCEPT decision (milliseconds).
 // Adjust based on your chute mechanism — 3 seconds is typical for a single item.

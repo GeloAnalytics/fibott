@@ -86,6 +86,11 @@ static unsigned long lastHeartbeatMs = 0;
 static unsigned long lastWifiWarnMs  = 0;
 static int uploadErrorCount = 0;
 
+// Non-blocking adaptive polling guard and timers
+static bool sessionPollInProgress = false;
+static unsigned long lastIdlePollMs = 0;
+static unsigned long idleStartTimeMs = 0;
+
 // ── Servo Control (LEDC Timer 0 / Channel 0) ─────────────────────────────────
 // Camera uses Timer 2 / Channel 2, so Timer 0 is safe.
 static void servoSetup() {
@@ -759,16 +764,38 @@ void loop() {
 
   switch (state) {
 
-    // ── IDLE: Poll for an active kiosk session ──────────────────────────
+    // ── IDLE: Poll for an active kiosk session (Adaptive 500ms Non-Blocking) ────
     case STATE_IDLE: {
       maybeHeartbeat();
 
-      char sessionId[128] = "";
-      if (!pollSession(sessionId, sizeof(sessionId))) {
-        delay(POLL_INTERVAL_MS);
+      // Overlap Guard: Skip cycle if a poll request is already in progress
+      if (sessionPollInProgress) break;
+
+      unsigned long now = millis();
+      if (idleStartTimeMs == 0) idleStartTimeMs = now;
+
+      // Adaptive window: fast poll for the first SESSION_FAST_WINDOW_MS of idle,
+      // switching to SESSION_POLL_SLOW_MS after prolonged inactivity to conserve network load.
+      unsigned long interval = (now - idleStartTimeMs < SESSION_FAST_WINDOW_MS) ? SESSION_POLL_FAST_MS : SESSION_POLL_SLOW_MS;
+
+      if (now - lastIdlePollMs < interval) {
+        delay(10); // Small yield to keep CPU load low without blocking main loop
         break;
       }
 
+      lastIdlePollMs = now;
+      sessionPollInProgress = true;
+
+      char sessionId[128] = "";
+      bool found = pollSession(sessionId, sizeof(sessionId));
+      sessionPollInProgress = false;
+
+      if (!found) {
+        break;
+      }
+
+      // Reset idle window timer upon discovering active session
+      idleStartTimeMs = 0;
       strncpy(activeSessionId, sessionId, sizeof(activeSessionId));
       LOGF("FSM", "IDLE → READY  (session=%s)", activeSessionId);
       state = STATE_READY;
