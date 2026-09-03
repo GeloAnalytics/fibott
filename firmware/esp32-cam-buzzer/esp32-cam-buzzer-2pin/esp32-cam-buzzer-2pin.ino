@@ -315,7 +315,7 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_S);
+  client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
 
   LOGF("POLL", "Connecting to %s:%d ...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
@@ -416,7 +416,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
   WiFiClientSecure client;
   client.setInsecure();
-  client.setTimeout(BACKEND_TIMEOUT_S);
+  client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
 
   LOGF("UPLOAD", "Connecting to %s:%d for image upload...", BACKEND_HOST, BACKEND_PORT);
   if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
