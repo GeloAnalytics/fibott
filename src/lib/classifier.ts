@@ -287,12 +287,43 @@ export async function classifyImage(imageBuffer: Buffer): Promise<Classification
     throw new ClassifierError("IMAGE_PROCESSING_ERROR", "Empty image buffer provided");
   }
 
+  const mode = process.env.FIBOTT_ML_MODE ?? "zero-shot";
+
   try {
-    const loaded = await loadFineTunedHead();
-    if (loaded) {
-      return await classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+    if (mode === "experimental_head") {
+      const loaded = await loadFineTunedHead();
+      if (loaded) {
+        return await classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer);
+      }
     }
 
+    if (mode === "compare") {
+      const model = await loadModel();
+      const tensor = await decodeToTensor(imageBuffer);
+      let zeroShotRes: ClassificationResult;
+      try {
+        const predictions = await model.classify(tensor, 5);
+        zeroShotRes = mapPrediction(predictions);
+      } finally {
+        tensor.dispose();
+      }
+
+      const loaded = await loadFineTunedHead();
+      if (loaded) {
+        classifyWithFineTunedHead(loaded.model, loaded.labels, imageBuffer)
+          .then((headRes) => {
+            console.log("[CLASSIFIER/COMPARE]", {
+              zeroShot: { material: zeroShotRes.materialType, label: zeroShotRes.label, confidence: zeroShotRes.confidence },
+              experimentalHead: { material: headRes.materialType, label: headRes.label, confidence: headRes.confidence },
+              match: zeroShotRes.materialType === headRes.materialType,
+            });
+          })
+          .catch(() => {});
+      }
+      return zeroShotRes;
+    }
+
+    // Default zero-shot path
     const model = await loadModel();
     const tensor = await decodeToTensor(imageBuffer);
     try {

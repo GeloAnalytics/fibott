@@ -5,13 +5,14 @@ import { HeroStat } from "@/components/shared/hero-stat";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { RecyclingSession } from "@/components/user/recycling-session";
+import { ExchangeRatesCard } from "@/components/user/exchange-rates-card";
 import { formatDistanceToNow } from "date-fns";
 
 export default async function DashboardPage() {
   const session = await auth();
   const userId = session!.user.id;
 
-  const [user, itemsSubmitted, activeVouchers, recentActivity, cheapestVoucherRule] =
+  const [user, itemsSubmitted, activeVouchers, recentActivity, cheapestVoucherRule, rewardRules, voucherRules] =
     await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId } }),
       prisma.deposit.count({ where: { userId, status: "ACCEPTED" } }),
@@ -22,6 +23,14 @@ export default async function DashboardPage() {
         take: 5,
       }),
       prisma.voucherRule.findFirst({
+        where: { isActive: true },
+        orderBy: { pointsCost: "asc" },
+      }),
+      prisma.rewardRule.findMany({
+        where: { isActive: true },
+        orderBy: { materialType: "asc" },
+      }),
+      prisma.voucherRule.findMany({
         where: { isActive: true },
         orderBy: { pointsCost: "asc" },
       }),
@@ -39,6 +48,9 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+      {/* Live Exchange Rates */}
+      <ExchangeRatesCard rewardRules={rewardRules} voucherRules={voucherRules} />
 
       {/* Primary actions — shown first so they are visible without scrolling on mobile */}
       <div className="space-y-4">
