@@ -540,15 +540,8 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 }
 
 // ── ESP32 Local ML Classifier (MobileNetV1 96x96 INT8 TinyML Engine) ─────────
-struct LocalClassificationResult {
-  const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
-  float petProb;
-  float canProb;
-  float confidence;
-  bool isConfident;
-};
-
 static uint8_t *tensorArenaBuffer = nullptr;
+
 static uint8_t *rgbDecodeBuffer = nullptr;
 static bool tfliteInitialized = false;
 

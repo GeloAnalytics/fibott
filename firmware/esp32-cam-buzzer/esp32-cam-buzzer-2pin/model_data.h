@@ -23,6 +23,14 @@
 #pragma once
 #include <stdint.h>
 
+struct LocalClassificationResult {
+  const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
+  float petProb;
+  float canProb;
+  float confidence;
+  bool isConfident;
+};
+
 #define MODEL_INPUT_SIZE          96
 #define MODEL_INPUT_CHANNELS      3
 #define MODEL_NUM_CLASSES         2
@@ -34,6 +42,7 @@
 #define MODEL_OUTPUT_SCALE        0.00390625f
 #define MODEL_OUTPUT_ZERO_POINT   -128
 #define MODEL_TENSOR_ARENA_SIZE   (300 * 1024)  // bytes from PSRAM
+
 
 // TFLite flatbuffer -- 325800 bytes
 const unsigned int  g_model_data_len = 325800U;
