@@ -21,7 +21,7 @@
 // BACKEND_HOST: Vercel hostname WITHOUT https://
 // DEVICE_API_KEY: The plaintext API key generated in the admin device management.
 //                 Must match a registered ACTIVE device in the database.
-#define BACKEND_HOST   "fibott.vercel.app"
+#define BACKEND_HOST   "fibott-g7qet4mbi-gelo-analytics.vercel.app"
 #define BACKEND_PORT   443
 #define DEVICE_API_KEY "fibott_dev_7cd2f63b3fcaae7fa973ea58d8f94680df86c05f589bd189"
 #define PATH_LOGS      "/api/device/logs"
@@ -55,6 +55,7 @@
 //                            Requires ESP32 LEDC hardware PWM (Timer1, Channel1).
 //                            Supports custom pitch frequencies for each event.
 //                            Uses TONE_*_HZ constants below.
+#define PIN_BUZZER          14
 #define BUZZER_TYPE_ACTIVE  1
 #define BUZZER_TYPE_PASSIVE 2
 
