@@ -150,6 +150,8 @@ export function RecyclingSession() {
 
   async function handleStart() {
     setPhase({ name: "creating" });
+    setLastDeposit(null);     // clear previous session's deposit banner
+    setKioskConnected(false); // reset kiosk handshake indicator
     try {
       const res = await fetch("/api/kiosk/session", { method: "POST" });
       const data = await res.json();

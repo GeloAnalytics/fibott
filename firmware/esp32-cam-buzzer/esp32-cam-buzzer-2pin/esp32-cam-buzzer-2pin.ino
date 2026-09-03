@@ -228,9 +228,13 @@ static bool cameraInit() {
   cfg.pin_pwdn     = CAM_PWDN;
   cfg.pin_reset    = CAM_RESET;
   cfg.xclk_freq_hz = 20000000;
-  cfg.pixel_format = PIXFORMAT_JPEG;
-  cfg.frame_size   = FRAMESIZE_VGA;  // 640×480
-  cfg.jpeg_quality = 12;             // 0 = best, 63 = worst; 12 is a good balance
+  // GRAYSCALE at QVGA (320×240 = 76,800 bytes raw) allows classifyLocally to
+  // read actual pixel luminance values and compute texture variance — far more
+  // reliable than trying to infer material type from compressed JPEG file size.
+  // We no longer upload the raw image; only a JSON {materialType} is sent.
+  cfg.pixel_format = PIXFORMAT_GRAYSCALE;
+  cfg.frame_size   = FRAMESIZE_QVGA;    // 320×240
+  cfg.jpeg_quality = 12;                // Not used for GRAYSCALE, kept for clarity
   cfg.fb_count     = 1;
   cfg.fb_location  = CAMERA_FB_IN_PSRAM;
   cfg.grab_mode    = CAMERA_GRAB_LATEST;
@@ -252,9 +256,9 @@ static bool cameraInit() {
     return false;
   }
   s->set_brightness(s,  1);  // Slight brightness boost for indoor lighting
-  s->set_saturation(s, -1);  // Slightly reduced saturation
+  s->set_contrast(s,    1);  // Increase contrast to emphasize can label edges
 
-  LOG("CAMERA", "OV2640 ready — VGA JPEG, PSRAM frame buffer");
+  LOG("CAMERA", "OV2640 ready — QVGA GRAYSCALE, PSRAM frame buffer");
   return true;
 }
 
@@ -529,30 +533,48 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   return "";
 }
 
-// ── Fast Local ESP32 Feature Decision (< 1ms execution in C++) ───────────────
+// ── Fast Local ESP32 Surface Texture Classifier ───────────────────────────────
+// We use Adjacent Pixel Gradient (|P[x+1] - P[x]| + |P[y+1] - P[y]|):
+// - PET Bottles: Smooth clear/translucent plastic → adjacent pixels are nearly
+//   identical even across light/dark zones (avgGradient < 12).
+// - Aluminum Cans: Printed text, logos, barcode, metallic specular edges →
+//   high micro-contrast between neighboring pixels (avgGradient ≥ 12).
+#define CAN_GRADIENT_THRESHOLD 12UL  // Neighboring pixel difference threshold
+
 static const char* classifyLocally(camera_fb_t *fb) {
   if (!fb || !fb->buf || fb->len == 0) return "PET_BOTTLE";
 
-  size_t samples = 0;
-  long colorDiffSum = 0;
-  size_t step = fb->len / 200; // Sample 200 points across the frame buffer
-  if (step == 0) step = 1;
+  const int W = 320;
+  const int cx = 160, cy = 120;
+  const int halfW = 80, halfH = 60;  // 160×120 region = 19,200 pixels
 
-  for (size_t i = 0; i < fb->len - 2; i += step) {
-    uint8_t b1 = fb->buf[i];
-    uint8_t b2 = fb->buf[i + 1];
-    uint8_t b3 = fb->buf[i + 2];
-    long diff = abs((int)b1 - (int)b2) + abs((int)b2 - (int)b3) + abs((int)b3 - (int)b1);
-    colorDiffSum += diff;
-    samples++;
+  uint64_t gradientSum = 0;
+  uint32_t count = 0;
+  uint32_t sum = 0;
+
+  for (int y = cy - halfH; y < cy + halfH - 1; y++) {
+    for (int x = cx - halfW; x < cx + halfW - 1; x++) {
+      uint8_t p   = fb->buf[y * W + x];
+      uint8_t pR  = fb->buf[y * W + (x + 1)]; // Right neighbor
+      uint8_t pD  = fb->buf[(y + 1) * W + x]; // Down neighbor
+
+      sum += p;
+      gradientSum += (abs((int)p - (int)pR) + abs((int)p - (int)pD));
+      count++;
+    }
   }
 
-  long avgDiff = samples > 0 ? colorDiffSum / samples : 0;
-  // Opaque metallic cans have higher printed color channel variance (> 32)
-  if (avgDiff > 32) {
-    return "ALUMINUM_CAN";
-  }
-  return "PET_BOTTLE";
+  uint32_t mean = (count > 0) ? (sum / count) : 128;
+  uint32_t avgGradient = (count > 0) ? (gradientSum / count) : 0;
+
+  // Aluminum cans have high adjacent gradient due to printed labels/edges (avgGradient >= 12)
+  const char* decision = (avgGradient >= CAN_GRADIENT_THRESHOLD) ? "ALUMINUM_CAN" : "PET_BOTTLE";
+
+  // Calibration log — observe avgGradient for Bottle vs Can in Serial Monitor
+  Serial.printf("[CLASSIFY] mean=%u  avgGradient=%u  threshold=%u  → %s\n",
+    (unsigned)mean, (unsigned)avgGradient, (unsigned)CAN_GRADIENT_THRESHOLD, decision);
+
+  return decision;
 }
 
 // ── Fast Pre-Classified Scan JSON Sync (< 50ms background POST) ──────────────
