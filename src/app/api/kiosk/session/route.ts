@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 import { prewarmClassifier } from "@/lib/classifier";
 
-const SESSION_TTL_MS = 1 * 60 * 1000; // 1 minute — users must deposit within this window
+const SESSION_TTL_MS = 3 * 60 * 1000; // 3 minutes — users can deposit or end manually
 
 async function expireStale() {
   await prisma.depositSession.updateMany({
