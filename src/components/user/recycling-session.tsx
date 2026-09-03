@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Recycle, CheckCircle, Clock, AlertCircle, LogOut } from "lucide-react";
+import { Loader2, Recycle, CheckCircle, Clock, AlertCircle, LogOut, AlertTriangle, Camera, Radio } from "lucide-react";
 
 type Phase =
   | { name: "idle" }
@@ -70,7 +70,17 @@ export function RecyclingSession() {
     return () => { cancelled = true; };
   }, []);
 
-  // Poll for session completion while ACTIVE
+  const [kioskConnected, setKioskConnected] = useState(false);
+  const [lastDeposit, setLastDeposit] = useState<{
+    id: string;
+    status: string;
+    materialType: string;
+    classificationLabel: string;
+    pointsAwarded: number;
+    createdAt: string;
+  } | null>(null);
+
+  // Poll for session completion and real-time status while ACTIVE (every 1 second)
   useEffect(() => {
     if (phase.name !== "active") {
       stopPolling();
@@ -81,10 +91,13 @@ export function RecyclingSession() {
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/kiosk/session?id=${sessionId}`);
-        const text = await res.text();
-        console.log(`[poll] ${res.status} ${res.url}`, text);
         if (!res.ok) return;
-        const data = JSON.parse(text);
+        const data = await res.json();
+
+        setKioskConnected(Boolean(data.kioskConnected));
+        if (data.lastDeposit) {
+          setLastDeposit(data.lastDeposit);
+        }
 
         if (data.status === "COMPLETED") {
           stopPolling();
@@ -100,7 +113,7 @@ export function RecyclingSession() {
       } catch (e) {
         console.log("[poll] error", e);
       }
-    }, 2000);
+    }, 1000);
 
     return stopPolling;
   }, [phase, stopPolling, router]);
@@ -211,11 +224,22 @@ export function RecyclingSession() {
 
         {phase.name === "active" && (
           <div className="flex flex-col gap-4">
+            {/* Header with countdown and kiosk indicator */}
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-medium text-primary">Session active</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Insert a bottle or can at the kiosk now.
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-foreground">Session Active</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    kioskConnected
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 animate-pulse"
+                  }`}>
+                    <Radio className="size-3" />
+                    {kioskConnected ? "Kiosk Ready" : "Connecting Kiosk..."}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Place bottle or can in front of kiosk camera lens to scan & deposit
                 </p>
               </div>
               <div
@@ -228,15 +252,54 @@ export function RecyclingSession() {
               </div>
             </div>
 
-            <div className="flex gap-2 items-center">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Waiting for deposit…</span>
-            </div>
+            {/* Real-Time Live Status Cards */}
+            {lastDeposit && lastDeposit.status === "REJECTED" ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-900 dark:text-amber-200 space-y-1">
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <AlertTriangle className="size-4 text-amber-500 shrink-0" />
+                  Item Rejected / Unrecognized
+                </div>
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  Detected label: <span className="font-mono font-bold">"{lastDeposit.classificationLabel}"</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  💡 Tip: Hold a plastic bottle or aluminum can directly facing the camera lens and hold steady for 1 second.
+                </p>
+              </div>
+            ) : lastDeposit && lastDeposit.status === "ACCEPTED" ? (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-emerald-900 dark:text-emerald-200">
+                <div className="flex items-center gap-2 font-semibold text-sm">
+                  <CheckCircle className="size-4 text-emerald-500 shrink-0" />
+                  Deposit Accepted! (+{lastDeposit.pointsAwarded} pts)
+                </div>
+                <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-1">
+                  Gate opening... You can deposit another item now or end session when done.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3.5">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Camera className="size-4 text-primary animate-pulse" />
+                  <span>Kiosk camera active & scanning chute area…</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground mt-1">
+                  <div className={`p-2 rounded border text-center font-medium ${kioskConnected ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400" : "bg-muted"}`}>
+                    1. Kiosk Ready
+                  </div>
+                  <div className="p-2 rounded border bg-muted text-center font-medium">
+                    2. Position Item
+                  </div>
+                  <div className="p-2 rounded border bg-muted text-center font-medium">
+                    3. Auto Scan & Gate
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* End Session button — user voluntarily ends the session */}
-            <div className="pt-1 border-t border-border">
-              <p className="text-xs text-muted-foreground mb-2">
-                Done depositing? End your session early to free up the kiosk.
+            <div className="pt-2 border-t border-border flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                Done depositing? End session to free up kiosk.
               </p>
               <Button
                 variant="outline"
@@ -250,7 +313,7 @@ export function RecyclingSession() {
                 ) : (
                   <LogOut className="size-3.5" />
                 )}
-                {ending ? "Ending session…" : "End Session"}
+                {ending ? "Ending…" : "End Session"}
               </Button>
             </div>
           </div>

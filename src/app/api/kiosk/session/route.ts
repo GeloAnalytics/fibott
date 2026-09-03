@@ -136,8 +136,16 @@ export async function GET(req: Request) {
       where: { id: sessionId, userId: userSession.user.id },
       include: {
         deposits: {
-          where: { status: "ACCEPTED" },
-          select: { pointsAwarded: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            materialType: true,
+            classificationLabel: true,
+            pointsAwarded: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -146,12 +154,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const pointsAwarded = record.deposits.reduce((s, d) => s + d.pointsAwarded, 0);
+    const acceptedSummary = await prisma.deposit.aggregate({
+      where: { depositSessionId: sessionId, status: "ACCEPTED" },
+      _sum: { pointsAwarded: true },
+    });
+
+    const pointsAwarded = acceptedSummary._sum.pointsAwarded ?? 0;
+    const lastDeposit = record.deposits[0] ?? null;
 
     return NextResponse.json({
       status: record.status,
       expiresAt: record.expiresAt,
+      kioskConnected: record.deviceId !== null,
       pointsAwarded,
+      lastDeposit,
     });
   }
 
