@@ -358,6 +358,63 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   client.stop();
 }
 
+// ── Fast Reject Notification: tell the app a locally-rejected item happened ──
+// A local REJECT (confidence < ML_CONFIDENCE_THRESHOLD) used to only produce
+// an admin-facing sendLog() entry — the user's phone had no idea anything was
+// scanned at all, even though recycling-session.tsx already has a fully-built
+// amber "Item Rejected / Unrecognized" banner with a retry tip that was just
+// never being triggered. This posts the tiny, image-free JSON payload
+// /api/device/scan already accepts for a pre-classified result — processDeposit()
+// already handles materialType="REJECTED" correctly: it writes a REJECTED
+// Deposit row against the still-ACTIVE session (no points, session stays open
+// so the app's poll picks it up and the user can try again) without touching
+// session status. Modeled on sendLog() above — short timeout, best-effort,
+// never worth retrying since the gate has already closed either way.
+static void sendRejectResult(const char *sessionId, const char *topLabel, float confidence) {
+  if (WiFi.status() != WL_CONNECTED) {
+    LOG("REJECT-SYNC", "SKIP (no WiFi)");
+    return;
+  }
+  if (!sessionId || strlen(sessionId) == 0) {
+    LOG("REJECT-SYNC", "SKIP (no active sessionId)");
+    return;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(5000);  // milliseconds — short; this only tells the app to show a tip
+
+  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
+    LOG("REJECT-SYNC", "ERROR: could not connect to backend");
+    return;
+  }
+
+  char label[40];
+  snprintf(label, sizeof(label), "low_confidence:%s", topLabel);
+
+  JsonDocument doc;
+  doc["sessionId"] = sessionId;
+  doc["materialType"] = "REJECTED";
+  doc["classificationLabel"] = label;
+  doc["confidence"] = confidence;
+
+  String body;
+  serializeJson(doc, body);
+
+  client.printf("POST /api/device/scan HTTP/1.1\r\n");
+  client.printf("Host: %s\r\n", BACKEND_HOST);
+  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
+  client.printf("Content-Type: application/json\r\n");
+  client.printf("Content-Length: %u\r\n", (unsigned)body.length());
+  client.printf("Connection: close\r\n\r\n");
+  client.print(body);
+  client.flush();
+
+  String statusLine = client.readStringUntil('\n');
+  LOGF("REJECT-SYNC", "Reject notified | HTTP: %s", statusLine.c_str());
+  client.stop();
+}
+
 // ── Session Polling ───────────────────────────────────────────────────────────
 // Returns true and fills outSessionId if an ACTIVE session exists on the server.
 static bool pollSession(char *outSessionId, size_t maxLen) {
@@ -1078,11 +1135,16 @@ void loop() {
         playBeep(3, 120, 100, TONE_REJECT_HZ);
         gateClose();
 
-        // Send telemetry log for rejected item
+        // Send telemetry log for rejected item (admin-facing)
         char logDetails[128];
         snprintf(logDetails, sizeof(logDetails), "decision=%s pet_prob=%.2f can_prob=%.2f conf=%.2f thresh=%.2f",
                  mlRes.materialType, mlRes.petProb, mlRes.canProb, mlRes.confidence, ML_CONFIDENCE_THRESHOLD);
         sendLog("WARN", "LOCAL_ML", "Deposit rejected due to low classification confidence", logDetails);
+
+        // Tell the user's phone too, not just the admin log — see sendRejectResult()
+        // comment above. Session is still ACTIVE at this point (only cleared below),
+        // so this reaches the right session while it can still be retried.
+        sendRejectResult(activeSessionId, mlRes.materialType, mlRes.confidence);
 
         esp_camera_fb_return(fb);
         ledOff();

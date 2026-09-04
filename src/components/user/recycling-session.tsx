@@ -80,7 +80,11 @@ export function RecyclingSession() {
     createdAt: string;
   } | null>(null);
 
-  // Poll for session completion and real-time status while ACTIVE (every 1 second)
+  // Poll for session completion and real-time status while ACTIVE (every 0.5s).
+  // Was 1000ms — halving it shaves up to ~0.5s off how long it takes the
+  // "Deposit Accepted"/"Item Rejected" banner to appear after the kiosk has
+  // already acted. The bigger latency lever is the backend work each poll
+  // is waiting to see finish (see deposit-image/route.ts), not this interval.
   useEffect(() => {
     if (phase.name !== "active") {
       stopPolling();
@@ -113,7 +117,7 @@ export function RecyclingSession() {
       } catch (e) {
         console.log("[poll] error", e);
       }
-    }, 1000);
+    }, 500);
 
     return stopPolling;
   }, [phase, stopPolling, router]);

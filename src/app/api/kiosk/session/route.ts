@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
-import { prewarmClassifier } from "@/lib/classifier";
 
 const SESSION_TTL_MS = 3 * 60 * 1000; // 3 minutes — users can deposit or end manually
 
@@ -40,8 +39,12 @@ export async function POST() {
     },
   });
 
-  // Pre-warm AI model asynchronously while user prepares to deposit item
-  prewarmClassifier();
+  // Used to pre-warm the cloud MobileNet classifier here so it'd be ready by
+  // the time a deposit image came in. Removed: the ESP32's on-device model is
+  // now the authoritative decision for every deposit (see deposit-image/route.ts),
+  // so this was loading a multi-hundred-KB TensorFlow.js model into memory on
+  // every single "Start Recycling" tap for a code path that no longer runs in
+  // the normal case — pure added latency on session start for no benefit.
 
   return NextResponse.json(
     { sessionId: depositSession.id, expiresAt: depositSession.expiresAt },
