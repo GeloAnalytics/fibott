@@ -9,12 +9,28 @@
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
 // Appears in boot banner and heartbeat logs in the admin panel.
-#define FIRMWARE_VERSION "1.4.0-esp32-ml"
+#define FIRMWARE_VERSION "1.7.1-model-v3-real-photos"
 
 // ── Local ML Inference Configuration ─────────────────────────────────────────
 // Minimum confidence required to accept local classification decision (0.0 to 1.0).
 // If top class probability < ML_CONFIDENCE_THRESHOLD, item is REJECTED safely.
 #define ML_CONFIDENCE_THRESHOLD 0.60f
+
+// ── Camera Capture Resolution ─────────────────────────────────────────────────
+// The local classifier only ever needs a 96x96 downsample (MODEL_INPUT_SIZE in
+// model_data.h), so capturing at full VGA (640x480) just meant decoding 4x more
+// JPEG data than necessary on every single deposit before inference could even
+// start. QVGA (320x240) is still ~3.3x oversampled relative to what the model
+// reads, and is what gets uploaded to the backend for admin review / cloud
+// disagreement tracking — still plenty to see what was dropped in.
+//
+// If you go back to VGA, or try something else, change ONLY this block — the
+// RGB decode buffer in initLocalML() (esp32-cam-buzzer-2pin.ino) sizes itself
+// from CAPTURE_WIDTH/CAPTURE_HEIGHT, so it can't silently drift out of sync
+// with cameraInit()'s actual frame_size the way it used to.
+#define CAPTURE_FRAMESIZE  FRAMESIZE_QVGA
+#define CAPTURE_WIDTH      320
+#define CAPTURE_HEIGHT     240
 
 
 // ── WiFi Configuration ────────────────────────────────────────────────────────
@@ -90,6 +106,17 @@
 // Use BACKEND_TIMEOUT_MS in the .ino — never pass BACKEND_TIMEOUT_S directly.
 #define BACKEND_TIMEOUT_S  15
 #define BACKEND_TIMEOUT_MS (BACKEND_TIMEOUT_S * 1000)   // 15 000 ms — use this in setTimeout()
+
+// The accept/reject decision and gate movement are made entirely by local
+// on-device ML (see classifyLocallyML() in the .ino) — uploadImage() and
+// sendFastScanResult() below are best-effort BACKGROUND telemetry (points,
+// admin deposit history, model-disagreement tracking) that runs AFTER the
+// gate has already closed. Keep this short: a slow/dropped sync only delays
+// points crediting slightly, it must never stall the kiosk between deposits.
+// Worst case with 2 attempts is now ~12s (was ~30s at BACKEND_TIMEOUT_MS x2).
+#define BACKGROUND_SYNC_TIMEOUT_S    6
+#define BACKGROUND_SYNC_TIMEOUT_MS   (BACKGROUND_SYNC_TIMEOUT_S * 1000)  // 6 000 ms
+#define BACKGROUND_SYNC_MAX_ATTEMPTS 2
 
 // How often to poll /api/kiosk/session while in IDLE state (milliseconds).
 // Set to 500ms for fast session detection latency.

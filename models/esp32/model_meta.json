@@ -11,12 +11,35 @@
   "input_zero_point": -1,
   "output_scale": 0.00390625,
   "output_zero_point": -128,
-  "val_accuracy": 0.631579,
-  "val_loss": 0.958569,
-  "tflite_size_bytes": 325800,
+  "cv_5fold_accuracy_mean": 0.734333,
+  "cv_5fold_accuracy_std": 0.038233,
+  "cv_5fold_accuracy_per_fold": [
+    0.72,
+    0.68,
+    0.72,
+    0.76,
+    0.791667
+  ],
+  "cv_5fold_pet_bottle_recall_mean": 0.82166,
+  "cv_5fold_aluminum_can_recall_mean": 0.58446,
+  "deployed_model_monitor_slice_accuracy": 0.538462,
+  "deployed_model_monitor_slice_tflite_accuracy": 0.538462,
+  "deployed_model_monitor_slice_per_class_recall": {
+    "PET_BOTTLE": 0.5,
+    "ALUMINUM_CAN": 0.6
+  },
+  "tflite_size_bytes": 336232,
   "total_parameters": 236146,
   "architecture": "MobileNetV1-alpha0.25-96x96-INT8",
-  "train_images": 77,
-  "val_images": 19,
-  "note": "TRAINED ON INTERNET IMAGES. Must be validated on real kiosk captures before production."
+  "train_images": 111,
+  "monitor_images": 13,
+  "total_images": 124,
+  "real_photo_images": 28,
+  "internet_photo_images": 96,
+  "class_counts": {
+    "PET_BOTTLE": 78,
+    "ALUMINUM_CAN": 46
+  },
+  "recipe": "retrain_esp32_model_v3 + finalize_esp32_model_v3 -- stratified 5-fold CV, class-balanced AND source-aware (real vs internet) balanced augmentation (sqrt-scaled boost for the real-photo subgroup within each class), +rotation/zoom/translation. 124 images: 96 original internet product photos + 28 real ESP32 kiosk captures added this round.",
+  "note": "First retrain to include real ESP32-camera-captured training photos (28 of 124), not just internet product photos. 5-fold CV accuracy improved from 64.5% (v2, internet-only + first 12 real photos folded in inconsistently) to 73.4%, and ALUMINUM_CAN recall from 44.8% to 58.4% -- real photos measurably helped, especially on the weaker class. Still a small dataset (124 images, most classes under 20 unique real items) -- expect continued improvement as the image-logging pipeline (deposit-image route) accumulates real deposits over time. Must be validated against live kiosk usage."
 }

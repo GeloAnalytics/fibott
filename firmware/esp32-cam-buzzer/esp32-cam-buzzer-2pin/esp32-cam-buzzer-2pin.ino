@@ -10,6 +10,11 @@
  *
  * Libraries required (Sketch → Include Library → Manage Libraries):
  *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
+ *   - "Chirale_TensorFlowLite" (Library Manager). NOT "Arduino_TensorFlowLite_ESP32" —
+ *     that one fails to compile against modern arduino-esp32 core 3.x (a bug in its
+ *     own bundled flatbuffers headers, unrelated to this sketch).
+ *     See the comment above the #include block below if your installed
+ *     library's MicroInterpreter constructor signature doesn't match.
  *
  * ── Hardware Wiring ─────────────────────────────────────────────────────────────
  *   GPIO13  → Servo signal (SG90/MG90S gate actuator)
@@ -48,6 +53,38 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+
+// ── TensorFlow Lite Micro (real on-device inference) ─────────────────────────
+// Using "Chirale_TensorFlowLite" (Library Manager, actively maintained, lists
+// "esp32" as a supported architecture). Its top-level umbrella header is named
+// after the library itself, unlike the old TensorFlowLite_ESP32.h.
+//
+// Chirale tracks a newer upstream TFLite Micro snapshot than the previous
+// library, where MicroInterpreter's constructor dropped the ErrorReporter
+// argument entirely (replaced by an internal logging mechanism) — so this now
+// uses the plain 4-argument form. If this doesn't match what your installed
+// copy expects, the compiler error will say so exactly (wrong argument count,
+// or a missing-symbol error naming what changed) — send it over and I'll
+// match it to Chirale's actual signature instead of guessing again.
+#include <Chirale_TensorFlowLite.h>
+#include "tensorflow/lite/micro/all_ops_resolver.h"
+#include "tensorflow/lite/micro/micro_interpreter.h"
+#include "tensorflow/lite/schema/schema_generated.h"
+
+// This struct MUST be defined here, before any function that uses it — Arduino's
+// automatic function-prototype generation inserts a forward declaration of
+// classifyLocallyML() (see below) right after this include block, BEFORE the
+// rest of the file is parsed. If this struct were defined later in the file
+// (it used to live down by initLocalML()), that auto-generated prototype would
+// reference an as-yet-undefined type and fail with "LocalClassificationResult
+// does not name a type" — which is exactly the error this fixes.
+struct LocalClassificationResult {
+  const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
+  float petProb;
+  float canProb;
+  float confidence;
+  bool isConfident;
+};
 
 // ── Serial diagnostic macros ──────────────────────────────────────────────────
 // All Serial output uses these so you can search for a prefix in the monitor.
@@ -230,9 +267,13 @@ static bool cameraInit() {
   cfg.pin_pwdn     = CAM_PWDN;
   cfg.pin_reset    = CAM_RESET;
   cfg.xclk_freq_hz = 20000000;
-  // JPEG at VGA (640×480) for Cloud AI Neural Network classification
+  // Capture at CAPTURE_FRAMESIZE (see config.h) — the local classifier only
+  // ever needs a 96x96 downsample, so a smaller capture means less JPEG data
+  // to decode into RGB888 before every inference, and a smaller/faster
+  // upload for the background cloud-sync record. QVGA (320x240) is still
+  // ~3.3x oversampled relative to the model's 96x96 input.
   cfg.pixel_format = PIXFORMAT_JPEG;
-  cfg.frame_size   = FRAMESIZE_VGA;    // 640×480
+  cfg.frame_size   = CAPTURE_FRAMESIZE;
   cfg.jpeg_quality = 12;               // 0 = best, 63 = worst
   cfg.fb_count     = 1;
   cfg.fb_location  = CAMERA_FB_IN_PSRAM;
@@ -257,7 +298,16 @@ static bool cameraInit() {
   s->set_brightness(s,  1);  // Slight brightness boost for indoor lighting
   s->set_saturation(s, -1);  // Slightly reduced saturation
 
-  LOG("CAMERA", "OV2640 ready — VGA JPEG, PSRAM frame buffer");
+  // The drop chute is a dark, enclosed space lit only by the brief GPIO4 flash
+  // in captureImage() — real captures were coming back very dark/underexposed
+  // even with the flash on. Push the sensor harder to compensate:
+  s->set_gainceiling(s, GAINCEILING_16X); // allow much more analog gain in low light
+                                           // (default is 2X — far too conservative in here)
+  s->set_aec2(s, 1);                      // "advanced AEC" — adapts exposure faster to a
+                                           // sudden lighting change (the flash turning on)
+  s->set_ae_level(s, 1);                  // bias the auto-exposure target brighter (range -2..2)
+
+  LOGF("CAMERA", "OV2640 ready — %dx%d JPEG, PSRAM frame buffer", CAPTURE_WIDTH, CAPTURE_HEIGHT);
   return true;
 }
 
@@ -393,6 +443,18 @@ static camera_fb_t* captureImage() {
   digitalWrite(4, HIGH); // Flash LED ON
   delay(60);             // Allow LED to illuminate and camera sensor to settle
 
+  // A fixed delay alone doesn't give the sensor's auto-exposure loop a real
+  // chance to react to the flash turning on -- AEC/AGC re-target based on what
+  // they measure IN a captured frame, not on a timer. The frame captured right
+  // after the flash switches on is measured against the (dark, pre-flash) old
+  // exposure setting and comes back badly under-exposed. Grab and discard one
+  // "warm-up" frame under flash lighting so AEC/AGC (tuned harder in
+  // cameraInit() above) converges before the frame that's actually used.
+  // Costs one extra frame period (roughly 60-100ms at QVGA) — worth it against
+  // captures that were coming back nearly black.
+  camera_fb_t *warm = esp_camera_fb_get();
+  if (warm) esp_camera_fb_return(warm);
+
   camera_fb_t *fb = esp_camera_fb_get();
 
   digitalWrite(4, LOW);  // Flash LED OFF
@@ -418,21 +480,32 @@ static camera_fb_t* captureImage() {
 // ── Image Upload ──────────────────────────────────────────────────────────────
 // Posts the JPEG to /api/device/deposit-image.
 // Returns "ACCEPT", "REJECT", or "" on any network/server error.
-static String uploadImage(camera_fb_t *fb, const char *sessionId) {
+// localMaterialType/localConfidence: the ESP32's own real on-device TFLite
+// Micro decision (already made and already acted on — the gate is already
+// closed by the time this runs). Sent to the backend as the authoritative
+// classification for points/recording, instead of letting deposit-image
+// independently re-guess with its much weaker zero-shot cloud model. See
+// the matching comment in deposit-image/route.ts.
+static String uploadImage(camera_fb_t *fb, const char *sessionId,
+                           const char *localMaterialType, float localConfidence) {
   if (WiFi.status() != WL_CONNECTED) {
     LOG("UPLOAD", "ERROR: Cannot upload — WiFi not connected");
     return "";
   }
 
-  for (int attempt = 1; attempt <= 2; attempt++) {
+  for (int attempt = 1; attempt <= BACKGROUND_SYNC_MAX_ATTEMPTS; attempt++) {
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(BACKEND_TIMEOUT_MS);  // milliseconds — see config.h
+    // Short, background-sync timeout — NOT BACKEND_TIMEOUT_MS. The gate
+    // decision is already made and the gate is already closed by the time
+    // this runs; a hung socket here must not tie up the kiosk. See config.h.
+    client.setTimeout(BACKGROUND_SYNC_TIMEOUT_MS);
 
-    LOGF("UPLOAD", "Connecting to %s:%d for image upload (attempt %d/2)...", BACKEND_HOST, BACKEND_PORT, attempt);
+    LOGF("UPLOAD", "Connecting to %s:%d for image upload (attempt %d/%d)...",
+         BACKEND_HOST, BACKEND_PORT, attempt, BACKGROUND_SYNC_MAX_ATTEMPTS);
     if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-      LOGF("UPLOAD", "WARN: TCP connect failed on attempt %d/2", attempt);
-      if (attempt < 2) { delay(250); continue; }
+      LOGF("UPLOAD", "WARN: TCP connect failed on attempt %d/%d", attempt, BACKGROUND_SYNC_MAX_ATTEMPTS);
+      if (attempt < BACKGROUND_SYNC_MAX_ATTEMPTS) { delay(250); continue; }
       return "";
     }
 
@@ -446,6 +519,20 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
       sessionPart += sessionId; sessionPart += "\r\n";
     }
 
+    // Build the local-decision fields — this is what makes this route trust
+    // the ESP32's real decision instead of re-guessing server-side.
+    String localTypePart;
+    localTypePart  = "--"; localTypePart += boundary; localTypePart += "\r\n";
+    localTypePart += "Content-Disposition: form-data; name=\"localMaterialType\"\r\n\r\n";
+    localTypePart += localMaterialType; localTypePart += "\r\n";
+
+    char confBuf[16];
+    snprintf(confBuf, sizeof(confBuf), "%.4f", localConfidence);
+    String localConfPart;
+    localConfPart  = "--"; localConfPart += boundary; localConfPart += "\r\n";
+    localConfPart += "Content-Disposition: form-data; name=\"localConfidence\"\r\n\r\n";
+    localConfPart += confBuf; localConfPart += "\r\n";
+
     // Build image part header
     String imagePart;
     imagePart  = "--"; imagePart += boundary; imagePart += "\r\n";
@@ -454,9 +541,11 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
 
     String footer = "\r\n--"; footer += boundary; footer += "--\r\n";
 
-    size_t contentLen = sessionPart.length() + imagePart.length() + fb->len + footer.length();
+    size_t contentLen = sessionPart.length() + localTypePart.length() + localConfPart.length()
+                       + imagePart.length() + fb->len + footer.length();
 
-    LOGF("UPLOAD", "Uploading %u bytes (sessionId=%s)", (unsigned)contentLen, sessionId ? sessionId : "none");
+    LOGF("UPLOAD", "Uploading %u bytes (sessionId=%s, local=%s/%.2f)",
+         (unsigned)contentLen, sessionId ? sessionId : "none", localMaterialType, localConfidence);
 
     client.printf("POST /api/device/deposit-image HTTP/1.1\r\n");
     client.printf("Host: %s\r\n", BACKEND_HOST);
@@ -466,6 +555,8 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     client.printf("Connection: close\r\n\r\n");
 
     if (sessionPart.length()) client.print(sessionPart);
+    client.print(localTypePart);
+    client.print(localConfPart);
     client.print(imagePart);
 
     // Stream image in 4KB chunks to avoid RAM overflow
@@ -482,9 +573,10 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     LOGF("UPLOAD", "HTTP Status: %s", statusLine.c_str());
 
     if (statusLine.length() == 0) {
-      LOGF("UPLOAD", "WARN: Empty HTTP status on attempt %d/2 (socket closed early) — retrying...", attempt);
+      LOGF("UPLOAD", "WARN: Empty HTTP status on attempt %d/%d (socket closed early) — retrying...",
+           attempt, BACKGROUND_SYNC_MAX_ATTEMPTS);
       client.stop();
-      if (attempt < 2) { delay(250); continue; }
+      if (attempt < BACKGROUND_SYNC_MAX_ATTEMPTS) { delay(250); continue; }
       return "";
     }
 
@@ -520,7 +612,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
     DeserializationError derr = deserializeJson(doc, jsonBody);
     if (derr != DeserializationError::Ok) {
       LOGF("UPLOAD", "ERROR: JSON parse failed (%s)", derr.c_str());
-      if (attempt < 2) { delay(250); continue; }
+      if (attempt < BACKGROUND_SYNC_MAX_ATTEMPTS) { delay(250); continue; }
       return "";
     }
 
@@ -539,25 +631,41 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId) {
   return "";
 }
 
-// ── ESP32 Local ML Classifier (MobileNetV1 96x96 INT8 TinyML Engine) ─────────
+// ── ESP32 Local ML Classifier (MobileNetV1 96x96 INT8, real TFLite Micro) ────
+// LocalClassificationResult is defined near the top of the file now (with the
+// TFLite includes) — see the comment there for why it can't live here.
+
 static uint8_t *tensorArenaBuffer = nullptr;
 static uint8_t *rgbDecodeBuffer   = nullptr;
-static int8_t  *inputTensorBuffer = nullptr;
 static bool tfliteInitialized     = false;
+
+static const tflite::Model      *tfliteModel        = nullptr;
+static tflite::MicroInterpreter *tfliteInterpreter   = nullptr;
+static TfLiteTensor             *tfliteInputTensor   = nullptr;
+static TfLiteTensor             *tfliteOutputTensor  = nullptr;
 
 static bool initLocalML() {
   if (tfliteInitialized) return true;
 
-  LOG("TINYML", "Initialising MobileNetV1 96x96 INT8 Local ML Engine...");
+  LOG("TINYML", "Initialising MobileNetV1 96x96 INT8 TFLite Micro engine...");
   LOGF("TINYML", "Model size: %u bytes | Tensor Arena: %d KB", g_model_data_len, MODEL_TENSOR_ARENA_SIZE / 1024);
 
-  size_t inputTensorBytes = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE * MODEL_INPUT_CHANNELS;
-
-  // Allocate Tensor Arena, RGB decode buffer, and Input Tensor from PSRAM to preserve internal SRAM & stack
+  // Allocate Tensor Arena and RGB decode buffer from PSRAM to preserve internal SRAM & stack.
+  // (There's no separate "input tensor" scratch buffer anymore — preprocessing
+  // writes straight into the interpreter's own input tensor, see below.)
+  //
+  // Both the PSRAM allocation and the internal-SRAM fallback below are sized
+  // from CAPTURE_WIDTH/CAPTURE_HEIGHT (config.h) — they used to be hardcoded
+  // to two DIFFERENT sizes (640x480 for PSRAM, 320x240 for the SRAM fallback)
+  // left over from an earlier resolution change. That mismatch meant that if
+  // the PSRAM allocation above ever failed and this fell back to internal
+  // SRAM, fmt2rgb888() would decode a full-size camera frame into a buffer
+  // only a quarter that size — a heap buffer overflow. Fixed by deriving both
+  // from the same constants so they can never drift apart again.
+  size_t rgbBufferBytes = (size_t)CAPTURE_WIDTH * (size_t)CAPTURE_HEIGHT * 3;
   if (psramFound()) {
     tensorArenaBuffer = (uint8_t*) heap_caps_malloc(MODEL_TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    rgbDecodeBuffer   = (uint8_t*) heap_caps_malloc(640 * 480 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    inputTensorBuffer = (int8_t*)  heap_caps_malloc(inputTensorBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    rgbDecodeBuffer   = (uint8_t*) heap_caps_malloc(rgbBufferBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   }
 
   if (!tensorArenaBuffer) {
@@ -565,19 +673,50 @@ static bool initLocalML() {
     tensorArenaBuffer = (uint8_t*) malloc(MODEL_TENSOR_ARENA_SIZE);
   }
   if (!rgbDecodeBuffer) {
-    rgbDecodeBuffer = (uint8_t*) malloc(320 * 240 * 3);
+    rgbDecodeBuffer = (uint8_t*) malloc(rgbBufferBytes);
   }
-  if (!inputTensorBuffer) {
-    inputTensorBuffer = (int8_t*) malloc(inputTensorBytes);
-  }
-
-  if (!tensorArenaBuffer || !rgbDecodeBuffer || !inputTensorBuffer) {
+  if (!tensorArenaBuffer || !rgbDecodeBuffer) {
     LOG("TINYML", "ERROR: Could not allocate memory buffers for Local ML inference!");
     return false;
   }
 
+  // Map the flatbuffer (no copy — this just points into g_model_data).
+  tfliteModel = tflite::GetModel(g_model_data);
+  if (tfliteModel->version() != TFLITE_SCHEMA_VERSION) {
+    LOGF("TINYML", "ERROR: model schema version %d != TFLite Micro schema %d — "
+         "retrain with a matching TF version or update the TFLite Micro library",
+         (int)tfliteModel->version(), TFLITE_SCHEMA_VERSION);
+    return false;
+  }
+
+  // AllOpsResolver is deliberately used instead of a hand-picked
+  // MicroMutableOpResolver: MobileNetV1 needs CONV_2D, DEPTHWISE_CONV_2D,
+  // FULLY_CONNECTED, MEAN, SOFTMAX, RESHAPE and friends, and getting that op
+  // list wrong just fails silently at AllocateTensors(). Trade a bit of flash
+  // for "it definitely has the op it needs."
+  static tflite::AllOpsResolver resolver;
+  // 4-argument MicroInterpreter constructor (model, resolver, arena, arena_size)
+  // — Chirale_TensorFlowLite tracks a newer TFLite Micro snapshot than the
+  // library this used to target, one where ErrorReporter was dropped from this
+  // constructor entirely. If your installed Chirale version wants a different
+  // argument list, the compiler will say so exactly — send me that error.
+  static tflite::MicroInterpreter staticInterpreter(
+      tfliteModel, resolver, tensorArenaBuffer, MODEL_TENSOR_ARENA_SIZE);
+  tfliteInterpreter = &staticInterpreter;
+
+  if (tfliteInterpreter->AllocateTensors() != kTfLiteOk) {
+    LOG("TINYML", "ERROR: AllocateTensors() failed — increase MODEL_TENSOR_ARENA_SIZE in model_data.h");
+    return false;
+  }
+
+  tfliteInputTensor  = tfliteInterpreter->input(0);
+  tfliteOutputTensor = tfliteInterpreter->output(0);
+
+  LOGF("TINYML", "Arena used: %u / %u bytes",
+       (unsigned)tfliteInterpreter->arena_used_bytes(), (unsigned)MODEL_TENSOR_ARENA_SIZE);
+
   tfliteInitialized = true;
-  LOG("TINYML", "Local ML Engine initialized successfully in PSRAM!");
+  LOG("TINYML", "TFLite Micro engine initialized successfully in PSRAM!");
   return true;
 }
 
@@ -594,82 +733,58 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  if (!tfliteInitialized) {
-    initLocalML();
-  }
-
-  if (!inputTensorBuffer || !rgbDecodeBuffer) {
-    LOG("TINYML", "ERROR: Buffers not available for inference");
+  if (!tfliteInitialized && !initLocalML()) {
+    LOG("TINYML", "ERROR: Local ML engine failed to initialise — rejecting for safety");
     return res;
   }
 
   unsigned long startMs = millis();
 
   // 1. Decode JPEG to RGB888
-  bool decodeOk = false;
   int srcW = fb->width;
   int srcH = fb->height;
 
-  decodeOk = fmt2rgb888(fb->buf, fb->len, fb->format, rgbDecodeBuffer);
-
-  if (!decodeOk) {
+  if (!fmt2rgb888(fb->buf, fb->len, fb->format, rgbDecodeBuffer)) {
     LOG("TINYML", "ERROR: Failed to decode framebuffer to RGB888");
     return res;
   }
 
-  // 2. Preprocess & Quantize to 96x96 INT8 input (stored in PSRAM buffer, NOT stack)
-  // Formula: int8_pix = (int8_t)roundf(((rgb_uint8 / 127.5f) - 1.0f) / MODEL_INPUT_SCALE + MODEL_INPUT_ZERO_POINT)
+  // 2. Resize + quantize straight into the interpreter's own input tensor —
+  // no separate scratch buffer or memcpy needed. Formula matches
+  // scripts/ml/train_esp32_model.py exactly:
+  //   int8_pix = round(((rgb_uint8 / 127.5f) - 1.0f) / MODEL_INPUT_SCALE + MODEL_INPUT_ZERO_POINT)
+  int8_t *inTensor = tfliteInputTensor->data.int8;
   for (int y = 0; y < MODEL_INPUT_SIZE; y++) {
     int srcY = (y * srcH) / MODEL_INPUT_SIZE;
     for (int x = 0; x < MODEL_INPUT_SIZE; x++) {
       int srcX = (x * srcW) / MODEL_INPUT_SIZE;
-      int srcIdx = (srcY * srcW + srcX) * 3;
+      int srcIdx    = (srcY * srcW + srcX) * 3;
       int targetIdx = (y * MODEL_INPUT_SIZE + x) * 3;
 
       for (int c = 0; c < 3; c++) {
-        uint8_t pixVal = rgbDecodeBuffer[srcIdx + c];
-        float floatVal = ((float)pixVal / 127.5f) - 1.0f;
-        int quantized = (int)roundf(floatVal / MODEL_INPUT_SCALE + (float)MODEL_INPUT_ZERO_POINT);
+        uint8_t pixVal    = rgbDecodeBuffer[srcIdx + c];
+        float   floatVal  = ((float)pixVal / 127.5f) - 1.0f;
+        int     quantized = (int)roundf(floatVal / MODEL_INPUT_SCALE + (float)MODEL_INPUT_ZERO_POINT);
         if (quantized < -128) quantized = -128;
         if (quantized > 127)  quantized = 127;
-        inputTensorBuffer[targetIdx + c] = (int8_t)quantized;
+        inTensor[targetIdx + c] = (int8_t)quantized;
       }
     }
   }
 
-  // 3. MobileNetV1 Feature Variance & INT8 Inference Evaluation
-  float petRaw = 0.0f;
-  float canRaw = 0.0f;
-
-  uint64_t varSum = 0;
-  int numPixels = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE;
-
-  for (int i = 0; i < numPixels * 3; i += 3) {
-    int r = inputTensorBuffer[i];
-    int g = inputTensorBuffer[i + 1];
-    int b = inputTensorBuffer[i + 2];
-    varSum += (abs(r - g) + abs(g - b) + abs(b - r));
+  // 3. Run the real MobileNetV1 model (this replaces what used to be a fake
+  // RGB-variance/glare heuristic — see git history if you need to compare).
+  if (tfliteInterpreter->Invoke() != kTfLiteOk) {
+    LOG("TINYML", "ERROR: Invoke() failed — rejecting for safety");
+    return res;
   }
 
-
-  float avgVar = (float)varSum / numPixels;
-
-  // Specular reflection & label color variance:
-  // Cans have higher color contrast/specular glare (avgVar > 35)
-  // Clear plastic bottles diffuse light evenly
-  if (avgVar > 35.0f) {
-    canRaw = 0.85f + (avgVar / 100.0f);
-    petRaw = 0.15f;
-  } else {
-    petRaw = 0.80f + ((35.0f - avgVar) / 50.0f);
-    canRaw = 0.20f;
-  }
-
-  float total = petRaw + canRaw;
-  if (total <= 0.0f) total = 1.0f;
-
-  res.petProb = petRaw / total;
-  res.canProb = canRaw / total;
+  // 4. Dequantize output probabilities. Class order is fixed by training:
+  // 0=PET_BOTTLE, 1=ALUMINUM_CAN (see MODEL_CLASS_* in model_data.h).
+  int8_t petRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_PET_BOTTLE];
+  int8_t canRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_ALUMINUM_CAN];
+  res.petProb = ((float)petRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
+  res.canProb = ((float)canRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
 
   if (res.canProb > res.petProb) {
     res.materialType = "ALUMINUM_CAN";
@@ -692,53 +807,14 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
 }
 
 
-// ── Fast Pre-Classified Scan JSON Sync (< 50ms background POST) ──────────────
-static void sendFastScanResult(const char* materialType, const char* sessionId) {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(5000); // 5s timeout
-
-  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-    LOGF("SCAN", "WARN: TCP connect failed for fast scan sync to %s:%d", BACKEND_HOST, BACKEND_PORT);
-    return;
-  }
-
-  char jsonPayload[256];
-  snprintf(jsonPayload, sizeof(jsonPayload),
-    "{\"sessionId\":\"%s\",\"materialType\":\"%s\",\"classificationLabel\":\"esp32-local-sensor\",\"confidence\":0.95}",
-    sessionId ? sessionId : "", materialType);
-
-  client.printf("POST /api/device/scan HTTP/1.1\r\n");
-  client.printf("Host: %s\r\n", BACKEND_HOST);
-  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
-  client.printf("Content-Type: application/json\r\n");
-  client.printf("Content-Length: %u\r\n", (unsigned)strlen(jsonPayload));
-  client.printf("Connection: close\r\n\r\n");
-  client.print(jsonPayload);
-  client.flush();
-
-  String statusLine = client.readStringUntil('\n');
-  LOGF("SCAN", "HTTP Status: %s", statusLine.c_str());
-
-  while (client.connected()) {
-    if (client.readStringUntil('\n') == "\r") break;
-  }
-  String body = client.readString();
-  client.stop();
-
-  int jStart = body.indexOf('{');
-  int jEnd   = body.lastIndexOf('}');
-  String jsonBody = (jStart >= 0 && jEnd > jStart) ? body.substring(jStart, jEnd + 1) : body;
-
-  JsonDocument doc;
-  if (deserializeJson(doc, jsonBody) == DeserializationError::Ok) {
-    const char* material = doc["materialType"] | materialType;
-    int points = doc["pointsAwarded"] | 10;
-    LOGF("SCAN", "Backend synced: material=%s points=%d", material, points);
-  }
-}
+// sendFastScanResult() (POST /api/device/scan) used to run here as a second,
+// separate background call right after uploadImage(). Removed: uploadImage()
+// now sends the ESP32's local decision itself (see its localMaterialType/
+// localConfidence multipart fields), so this second call was redundant and
+// was actively harmful — it landed on a session uploadImage() had already
+// marked COMPLETED and wrote a phantom orphaned REJECTED Deposit row on every
+// single successful deposit. See the call site in STATE_PROCESSING and the
+// matching comment in deposit-image/route.ts.
 
 // ── WiFi Reconnection Watchdog ────────────────────────────────────────────────
 static void ensureWifi() {
@@ -960,17 +1036,36 @@ void loop() {
         playBeep(1, 300, 0, TONE_ACCEPT_HZ);
         gateOpen();
 
-        // Background Cloud AI upload for session telemetry, points, & model disagreement tracking
-        LOG("FSM", "Syncing deposit with cloud backend...");
-        String serverDecision = uploadImage(fb, activeSessionId);
-        sendFastScanResult(mlRes.materialType, activeSessionId);
+        // Hold gate open for GATE_OPEN_MS, then close it right away. The
+        // physical deposit cycle must never wait on network conditions — it
+        // used to close the gate only AFTER both network calls below
+        // finished, so a slow/dropped WiFi link could leave the gate open
+        // (and the kiosk unable to serve the next customer) for up to ~35s.
+        delay(GATE_OPEN_MS);
+        gateClose();
+        LOG("FSM", "Gate closed — syncing deposit with cloud backend in background");
+
+        // Background sync: upload the frame AND the local decision together
+        // in one call, so the backend records/awards points on what the ESP32
+        // actually decided (and already acted on), not an independent guess.
+        // This is best-effort: the local model already made the accept/reject
+        // call and the gate has already closed, so a slow or failed sync here
+        // only delays points/telemetry — it can no longer stall the kiosk
+        // itself. (See BACKGROUND_SYNC_* in config.h — worst case is now
+        // ~12s of background work, not ~35s blocking the FSM.)
+        //
+        // NOTE: this used to ALSO call sendFastScanResult() right after —
+        // that sent the same decision to /api/device/scan as a second,
+        // separate deposit-completion call. Since uploadImage() above already
+        // completes the deposit (and the backend session is no longer ACTIVE
+        // once it does), that second call was landing on a session that had
+        // already been marked COMPLETED and writing a phantom orphaned
+        // REJECTED row for every single successful deposit. Removed — one
+        // call now does the whole job.
+        String serverDecision = uploadImage(fb, activeSessionId, mlRes.materialType, mlRes.confidence);
 
         esp_camera_fb_return(fb);  // Release frame buffer RAM
         ledOff();
-
-        // Hold gate open for GATE_OPEN_MS, then close and return to IDLE
-        delay(GATE_OPEN_MS);
-        gateClose();
 
         LOG("FSM", "SUCCESS — deposit complete, gate closed");
         uploadErrorCount = 0;
