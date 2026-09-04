@@ -14,7 +14,7 @@
 // ── Local ML Inference Configuration ─────────────────────────────────────────
 // Minimum confidence required to accept local classification decision (0.0 to 1.0).
 // If top class probability < ML_CONFIDENCE_THRESHOLD, item is REJECTED safely.
-#define ML_CONFIDENCE_THRESHOLD 0.60f
+#define ML_CONFIDENCE_THRESHOLD 0.40f
 
 // ── Camera Capture Resolution ─────────────────────────────────────────────────
 // The local classifier only ever needs a 96x96 downsample (MODEL_INPUT_SIZE in
@@ -108,14 +108,23 @@
 #define BACKEND_TIMEOUT_MS (BACKEND_TIMEOUT_S * 1000)   // 15 000 ms — use this in setTimeout()
 
 // The accept/reject decision and gate movement are made entirely by local
-// on-device ML (see classifyLocallyML() in the .ino) — uploadImage() and
-// sendFastScanResult() below are best-effort BACKGROUND telemetry (points,
-// admin deposit history, model-disagreement tracking) that runs AFTER the
-// gate has already closed. Keep this short: a slow/dropped sync only delays
-// points crediting slightly, it must never stall the kiosk between deposits.
-// Worst case with 2 attempts is now ~12s (was ~30s at BACKEND_TIMEOUT_MS x2).
-#define BACKGROUND_SYNC_TIMEOUT_S    6
-#define BACKGROUND_SYNC_TIMEOUT_MS   (BACKGROUND_SYNC_TIMEOUT_S * 1000)  // 6 000 ms
+// on-device ML (see classifyLocallyML() in the .ino) — uploadImage() below
+// is best-effort BACKGROUND telemetry (points, admin deposit history, image
+// logging, model-disagreement tracking) that runs AFTER the gate has already
+// closed. A slow/dropped sync only delays points crediting slightly, it can
+// never stall the kiosk between deposits — so there is no UX cost to giving
+// it plenty of room.
+//
+// /api/device/deposit-image now does real work per request: decode the
+// multipart image, base64-encode it, and write it (plus the deposit row) to
+// Postgres via Prisma. On Vercel's free/hobby tier a cold function start
+// plus a cold Neon Postgres connection can easily take several seconds on
+// the first request after any idle period — 6s was too tight and caused
+// "socket closed early / empty HTTP status" failures on otherwise-correct
+// requests. Widened to 20s. Worst case with 2 attempts is now ~40s, all of
+// it after the gate has already closed.
+#define BACKGROUND_SYNC_TIMEOUT_S    20
+#define BACKGROUND_SYNC_TIMEOUT_MS   (BACKGROUND_SYNC_TIMEOUT_S * 1000)  // 20 000 ms
 #define BACKGROUND_SYNC_MAX_ATTEMPTS 2
 
 // How often to poll /api/kiosk/session while in IDLE state (milliseconds).
