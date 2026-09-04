@@ -34,6 +34,26 @@
 # Confirm Walled Garden rules:
 /ip/hotspot/walled-garden/print
 
+# ── 3b. Bypass HotSpot auth entirely for the ESP32 kiosk controller ─────────
+# The walled-garden dst-host rules above are matched against the HTTP Host
+# header (and, on RouterOS 7, HTTPS SNI) -- they were written for a PHONE
+# BROWSER reaching the sign-in page before it has a voucher. The ESP32 has no
+# browser and no way to "log in" through the captive portal at all, so it
+# depends entirely on that dst-host=fibott.vercel.app rule correctly matching
+# its raw TLS traffic. That should work, but SNI-based walled-garden matching
+# is easy to get subtly wrong (RouterOS version/config quirks, firewall rule
+# ordering) and fails SILENTLY -- requests just never complete, no error.
+#
+# For a fixed, always-on device like the kiosk, don't depend on that at all:
+# bind its MAC address as "bypassed" so the router treats it as pre-
+# authenticated for everything, on any host/port, independent of walled
+# garden or DNS behavior. Get the MAC from the ESP32's serial boot log
+# (WiFi.macAddress()) or Admin -> device management, then:
+/ip/hotspot/ip-binding/add mac-address=<ESP32-MAC-ADDRESS> type=bypassed comment="fibott: kiosk controller -- never subject to HotSpot auth"
+
+# Confirm the binding:
+/ip/hotspot/ip-binding/print
+
 # ── 4. Create a restricted API user ──────────────────────────────────────────
 # Replace <STRONG-PASSWORD> with a real password (save it — you'll need it for Vercel)
 /user/add name=fibott-api password=<STRONG-PASSWORD> group=write

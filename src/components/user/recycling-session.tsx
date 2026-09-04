@@ -266,7 +266,7 @@ export function RecyclingSession() {
                   Item Rejected / Unrecognized
                 </div>
                 <p className="text-xs text-amber-800 dark:text-amber-300">
-                  Detected label: <span className="font-mono font-bold">"{lastDeposit.classificationLabel}"</span>
+                  Detected label: <span className="font-mono font-bold">&quot;{lastDeposit.classificationLabel}&quot;</span>
                 </p>
                 <p className="text-xs text-muted-foreground">
                   💡 Tip: Hold a plastic bottle or aluminum can directly facing the camera lens and hold steady for 1 second.

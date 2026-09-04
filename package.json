@@ -14,6 +14,8 @@
     "ml:train": "tsx scripts/ml/train.ts",
     "ml:setup": "tsx scripts/ml/setup.ts",
     "ml:collect": "tsx scripts/ml/collect-server.ts",
+    "ml:export-deposits": "tsx scripts/ml/export-deposits.ts",
+    "ml:apply-annotations": "tsx scripts/ml/apply-annotations.ts",
     "test:mikrotik": "tsx infra/test-mikrotik.ts",
     "db:seed": "prisma db seed"
   },

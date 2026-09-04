@@ -167,6 +167,62 @@ static void gateOpen()  {
   servoWrite(SERVO_OPEN_US);
 }
 
+// ── Flash LED Brightness Control (LEDC Timer 3 / Channel 3) ─────────────────
+// GPIO4 is the AI-Thinker board's built-in flash LED. It sits behind an
+// onboard transistor switch (the GPIO doesn't source the LED's current
+// directly), so PWM-dimming it behaves exactly like dimming any other
+// switched LED -- no different electrically from the plain on/off it's
+// replacing. Was a straight digitalWrite() HIGH (i.e. 100% duty, fixed) in
+// captureImage() -- full brightness at close range in a small chute was
+// overexposing anything shiny or light-colored, confirmed by the reviewed
+// deposit photos (most were badly blown out).
+// Camera XCLK uses Timer2/Channel2, servo uses Timer0/Channel0, and the
+// passive-buzzer build (if BUZZER_MODE is ever switched) uses Timer1/
+// Channel1 -- Timer3/Channel3 is free regardless of buzzer mode.
+// 5kHz is far faster than one exposure's integration time, so duty-cycling
+// reads as a steady, dimmer light to the sensor rather than flicker/banding.
+#define FLASH_PWM_RESOLUTION_BITS 10
+#define FLASH_PWM_MAX_DUTY        ((1 << FLASH_PWM_RESOLUTION_BITS) - 1)  // 1023
+// 0.0-1.0 fraction of full brightness. Was effectively 1.0. Tune this again
+// after your next reviewed batch if captures are still too bright/dark.
+#define FLASH_BRIGHTNESS 0.5f
+
+static void flashSetup() {
+  LOGF("FLASH", "Initialising dimmable flash on GPIO4 (%.0f%% brightness)", FLASH_BRIGHTNESS * 100);
+  ledc_timer_config_t tc = {};
+  tc.speed_mode      = LEDC_LOW_SPEED_MODE;
+  tc.duty_resolution = (ledc_timer_bit_t)FLASH_PWM_RESOLUTION_BITS;
+  tc.timer_num       = LEDC_TIMER_3;
+  tc.freq_hz         = 5000;
+  tc.clk_cfg         = LEDC_AUTO_CLK;
+  if (ledc_timer_config(&tc) != ESP_OK) {
+    LOG("FLASH", "ERROR: Timer config failed");
+  }
+
+  ledc_channel_config_t cc = {};
+  cc.gpio_num   = 4;
+  cc.speed_mode = LEDC_LOW_SPEED_MODE;
+  cc.channel    = LEDC_CHANNEL_3;
+  cc.intr_type  = LEDC_INTR_DISABLE;
+  cc.timer_sel  = LEDC_TIMER_3;
+  cc.duty       = 0;
+  cc.hpoint     = 0;
+  if (ledc_channel_config(&cc) != ESP_OK) {
+    LOG("FLASH", "ERROR: Channel config failed");
+  }
+}
+
+static void flashOn() {
+  uint32_t duty = (uint32_t)(FLASH_BRIGHTNESS * FLASH_PWM_MAX_DUTY);
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, duty);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
+}
+
+static void flashOff() {
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, 0);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
+}
+
 // ── 2-Pin Buzzer Driver ───────────────────────────────────────────────────────
 #if BUZZER_MODE == BUZZER_TYPE_PASSIVE
 static void buzzerPwmSetup() {
@@ -494,11 +550,10 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 // ── Image Capture ─────────────────────────────────────────────────────────────
 // Flashes ESP32 Flash LED (GPIO4) during capture for active translucency illumination.
 static camera_fb_t* captureImage() {
-  LOG("CAMERA", "Capturing frame from OV2640 with Flash LED active...");
+  LOGF("CAMERA", "Capturing frame from OV2640 with Flash LED active (%.0f%% brightness)...", FLASH_BRIGHTNESS * 100);
 
-  pinMode(4, OUTPUT);
-  digitalWrite(4, HIGH); // Flash LED ON
-  delay(60);             // Allow LED to illuminate and camera sensor to settle
+  flashOn();  // was: pinMode(4, OUTPUT); digitalWrite(4, HIGH); -- full brightness, no dimming
+  delay(60);  // Allow LED to illuminate and camera sensor to settle
 
   // A fixed delay alone doesn't give the sensor's auto-exposure loop a real
   // chance to react to the flash turning on -- AEC/AGC re-target based on what
@@ -514,7 +569,7 @@ static camera_fb_t* captureImage() {
 
   camera_fb_t *fb = esp_camera_fb_get();
 
-  digitalWrite(4, LOW);  // Flash LED OFF
+  flashOff();  // was: digitalWrite(4, LOW);
 
   if (!fb) {
     LOG("CAMERA", "ERROR: esp_camera_fb_get() returned NULL");
@@ -945,6 +1000,9 @@ void setup() {
   gateClose();
   LOG("BOOT", "Gate closed (servo at rest position)");
   delay(300);  // Allow servo to reach position before camera init
+
+  // ── Flash LED ────────────────────────────────────────────────────────
+  flashSetup();
 
   // ── Camera ───────────────────────────────────────────────────────────
   LOG("BOOT", "Starting camera...");

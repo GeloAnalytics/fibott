@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import jpeg from "jpeg-js";
 import type { MaterialType } from "@/generated/prisma/enums";
 import type * as tfTypes from "@tensorflow/tfjs";
 import type * as mobilenetTypes from "@tensorflow-models/mobilenet";
@@ -143,8 +144,6 @@ async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
   }
 
   // 2. Pure JavaScript fallback: jpeg-js (zero C++ native shared library dependencies)
-  const jpegMod = await import("jpeg-js");
-  const jpeg = jpegMod.default || jpegMod;
   const rawDecoded = jpeg.decode(imageBuffer, { useTArray: true, formatAsRGBA: false });
 
   const srcWidth = rawDecoded.width;
@@ -179,8 +178,6 @@ async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
  */
 function analyzeOpacityAndColor(imageBuffer: Buffer): "ALUMINUM_CAN" | "PET_BOTTLE" {
   try {
-    const jpegMod = require("jpeg-js");
-    const jpeg = jpegMod.default || jpegMod;
     const decoded = jpeg.decode(imageBuffer, { useTArray: true, formatAsRGBA: false });
     const data = decoded.data;
     const len = data.length;

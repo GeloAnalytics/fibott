@@ -105,7 +105,10 @@ export function AdminReportsClient() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    const timeout = window.setTimeout(() => {
+      fetchData();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [fetchData]);
 
   const exportPDF = async () => {

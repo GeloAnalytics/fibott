@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 
 import { AdminResetPasswordDialog } from "@/components/admin/admin-reset-password-dialog";
+import { AdminGrantVoucherDialog } from "@/components/admin/admin-grant-voucher-dialog";
 
 const PAGE_SIZE = 100;
 
@@ -32,13 +33,18 @@ export default async function AdminUsersPage({
       }
     : undefined;
 
-  const [users, total] = await Promise.all([
+  const [users, total, voucherRules] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: PAGE_SIZE,
     }),
     prisma.user.count({ where }),
+    prisma.voucherRule.findMany({
+      where: { isActive: true },
+      orderBy: { durationMinutes: "asc" },
+      select: { id: true, label: true, pointsCost: true, durationMinutes: true },
+    }),
   ]);
 
   return (
@@ -46,7 +52,8 @@ export default async function AdminUsersPage({
       <div>
         <h1 className="text-2xl font-semibold">User Directory</h1>
         <p className="text-sm text-muted-foreground">
-          Search and manage recycler accounts and perform admin-assisted password resets.
+          Search and manage recycler accounts, grant HotSpot vouchers, and perform
+          admin-assisted password resets.
         </p>
       </div>
 
@@ -85,7 +92,10 @@ export default async function AdminUsersPage({
                     </TableCell>
                     <TableCell className="tabular-nums">{user.pointsBalance}</TableCell>
                     <TableCell className="text-right">
-                      <AdminResetPasswordDialog user={user} />
+                      <div className="flex justify-end gap-2">
+                        <AdminGrantVoucherDialog user={user} voucherRules={voucherRules} />
+                        <AdminResetPasswordDialog user={user} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
