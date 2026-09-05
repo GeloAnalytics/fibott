@@ -30,9 +30,9 @@ export function ExchangeRatesCard({
 
   return (
     <div className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex items-center justify-between border-b pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <Coins className="h-4 w-4" />
           </div>
           <div>
@@ -42,7 +42,7 @@ export function ExchangeRatesCard({
             </p>
           </div>
         </div>
-        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+        <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           Live Rates
         </span>
       </div>

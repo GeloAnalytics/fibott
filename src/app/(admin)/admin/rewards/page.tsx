@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { RewardRuleForm } from "./reward-rule-form";
 import { VoucherRuleForm } from "./voucher-rule-form";
+import { VoucherRuleCreateForm } from "./voucher-rule-create-form";
 
 export default async function AdminRewardsPage() {
   const [rewardRules, voucherRules] = await Promise.all([
@@ -32,6 +33,10 @@ export default async function AdminRewardsPage() {
 
       <div className="space-y-4">
         <h2 className="text-lg font-medium">Voucher conversions</h2>
+        <p className="text-sm text-muted-foreground">
+          Every option below is offered to users on the wallet page and in the admin grant
+          dialog. Deactivate an option instead of deleting it to keep past vouchers intact.
+        </p>
         {voucherRules.map((rule) => (
           <VoucherRuleForm
             key={rule.id}
@@ -39,8 +44,10 @@ export default async function AdminRewardsPage() {
             label={rule.label}
             pointsCost={rule.pointsCost}
             durationMinutes={rule.durationMinutes}
+            isActive={rule.isActive}
           />
         ))}
+        <VoucherRuleCreateForm />
       </div>
     </div>
   );

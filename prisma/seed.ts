@@ -51,6 +51,15 @@ async function main() {
     });
   }
 
+  const existingShortVoucherRule = await prisma.voucherRule.findFirst({
+    where: { label: "30 Min WiFi" },
+  });
+  if (!existingShortVoucherRule) {
+    await prisma.voucherRule.create({
+      data: { label: "30 Min WiFi", pointsCost: 50, durationMinutes: 30 },
+    });
+  }
+
   const adminEmail = "admin@fibott.local";
   const adminPassword = "Admin12345!";
   const adminPasswordHash = await bcrypt.hash(adminPassword, 10);

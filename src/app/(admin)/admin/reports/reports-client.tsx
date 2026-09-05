@@ -265,7 +265,7 @@ export function AdminReportsClient() {
   return (
     <div className="space-y-8">
       {/* Toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs text-muted-foreground">
             Generated:{" "}
@@ -276,7 +276,7 @@ export function AdminReportsClient() {
             })}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={fetchData}
             className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted"
@@ -399,31 +399,33 @@ export function AdminReportsClient() {
         {topUsers.length === 0 ? (
           <p className="text-sm text-muted-foreground">No user data yet.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <th className="pb-2 pr-4">#</th>
-                <th className="pb-2 pr-4">User</th>
-                <th className="pb-2 pr-4 text-right">Deposits</th>
-                <th className="pb-2 text-right">Points</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {topUsers.map((u, i) => (
-                <tr key={u.email} className="group">
-                  <td className="py-2.5 pr-4 font-bold text-muted-foreground">#{i + 1}</td>
-                  <td className="py-2.5 pr-4">
-                    <p className="font-medium">{u.name}</p>
-                    <p className="text-xs text-muted-foreground">{u.email}</p>
-                  </td>
-                  <td className="py-2.5 pr-4 text-right tabular-nums">{u.deposits}</td>
-                  <td className="py-2.5 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                    {u.points.toLocaleString()}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="pb-2 pr-4">#</th>
+                  <th className="pb-2 pr-4">User</th>
+                  <th className="pb-2 pr-4 text-right">Deposits</th>
+                  <th className="pb-2 text-right">Points</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {topUsers.map((u, i) => (
+                  <tr key={u.email} className="group">
+                    <td className="py-2.5 pr-4 font-bold text-muted-foreground">#{i + 1}</td>
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
+                      <p className="font-medium">{u.name}</p>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums">{u.deposits}</td>
+                    <td className="py-2.5 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {u.points.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

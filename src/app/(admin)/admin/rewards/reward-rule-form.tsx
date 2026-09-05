@@ -58,7 +58,7 @@ export function RewardRuleForm({
       <CardContent className="pt-6">
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="flex items-end justify-between gap-4"
+          className="flex flex-wrap items-end justify-between gap-4"
         >
           <div className="space-y-2">
             <Label>{MATERIAL_LABEL[materialType] ?? materialType}</Label>

@@ -18,11 +18,15 @@ export const metadata: Metadata = {
   description: "Recycle bottles and cans for WiFi vouchers.",
 };
 
+// Pinch-to-zoom must stay enabled -- disabling it (maximumScale: 1,
+// userScalable: false) is what made panels feel "fixed" on phones, since
+// people couldn't zoom in on anything that didn't fit. The iOS/Android
+// auto-zoom-on-input-focus this used to guard against is already handled
+// properly below (globals.css forces 16px font-size on inputs under 768px),
+// so disabling user zoom entirely was never necessary.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({
