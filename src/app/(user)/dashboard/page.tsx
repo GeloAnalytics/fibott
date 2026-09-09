@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { HeroStat } from "@/components/shared/hero-stat";
-import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { RecyclingSession } from "@/components/user/recycling-session";
@@ -106,12 +104,32 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <HeroStat value={user.pointsBalance} label="Points balance" qualifier={qualifier} />
-
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <StatCard label="Recycled" value={itemsSubmitted} />
-        <StatCard label="Vouchers" value={activeVouchers} />
-        <StatCard label="Activity" value={recentActivity.length} />
+      {/* Balance & Quick Stats Card */}
+      <div className="rounded-2xl border bg-gradient-to-br from-card to-secondary/30 p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Points Balance</span>
+          <span className="text-xs font-medium text-muted-foreground">{qualifier}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums">
+            {user.pointsBalance}
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-muted-foreground">points</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-border/60 text-center">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-semibold text-muted-foreground">Recycled</span>
+            <span className="text-sm font-bold tabular-nums text-foreground">{itemsSubmitted}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-semibold text-muted-foreground">Vouchers</span>
+            <span className="text-sm font-bold tabular-nums text-foreground">{activeVouchers}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-semibold text-muted-foreground">Activity</span>
+            <span className="text-sm font-bold tabular-nums text-foreground">{recentActivity.length}</span>
+          </div>
+        </div>
       </div>
 
       <div>

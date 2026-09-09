@@ -1,8 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { expireStaleVouchers } from "@/lib/voucher";
-import { HeroStat } from "@/components/shared/hero-stat";
-import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -72,18 +70,34 @@ export default async function WalletPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl sm:text-2xl font-semibold">Points Wallet</h1>
+    <div className="space-y-5">
+      <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Points Wallet</h1>
 
-      <HeroStat
-        value={user.pointsBalance}
-        label="Current balance"
-        qualifier={`${earned} points earned overall, ${spent} spent on vouchers so far.`}
-      />
-
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        <StatCard label="Points earned" value={earned} />
-        <StatCard label="Points spent" value={spent} />
+      {/* Unified Wallet Balance Card */}
+      <div className="rounded-2xl border bg-gradient-to-br from-card to-secondary/30 p-4 sm:p-6 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Balance</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Active
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums">
+            {user.pointsBalance}
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-muted-foreground">points</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-border/60">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-medium text-muted-foreground">Total Earned</span>
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">+{earned} pts</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-medium text-muted-foreground">Total Spent</span>
+            <span className="text-sm font-bold text-foreground tabular-nums">-{spent} pts</span>
+          </div>
+        </div>
       </div>
 
       <RedeemSection rules={voucherRules} pointsBalance={user.pointsBalance} />

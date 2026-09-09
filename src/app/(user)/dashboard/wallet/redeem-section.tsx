@@ -64,40 +64,46 @@ export function RedeemSection({
 
       {redeemedCode && <VoucherActions code={redeemedCode} />}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-2.5">
         {rules.map((rule) => {
           const canAfford = pointsBalance >= rule.pointsCost;
           return (
-            <Card key={rule.id} className="overflow-hidden border shadow-xs">
-              <CardContent className="p-4 flex flex-col justify-between gap-3 h-full">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-semibold text-base">{rule.label}</h3>
-                    <span className="font-bold text-sm text-primary tabular-nums">
-                      {rule.pointsCost} pts
+            <div
+              key={rule.id}
+              className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs hover:border-primary/40 transition-colors"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-semibold text-sm sm:text-base">
+                  📶
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="font-semibold text-sm text-foreground">{rule.label}</h3>
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                      {rule.durationMinutes}m
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                    {rule.pointsCost} points &middot; {rule.durationMinutes} minutes of WiFi
+                  <p className="text-xs font-semibold text-primary tabular-nums mt-0.5">
+                    {rule.pointsCost} points
                   </p>
                 </div>
-                <Button
-                  className="w-full"
-                  size="sm"
-                  disabled={!canAfford || redeemingId === rule.id}
-                  onClick={() => handleRedeem(rule.id)}
-                >
-                  {redeemingId === rule.id && (
-                    <Loader2 className="size-3.5 animate-spin mr-1.5" aria-hidden="true" />
-                  )}
-                  {redeemingId === rule.id
-                    ? "Redeeming..."
-                    : canAfford
-                      ? "Redeem"
-                      : `Need ${rule.pointsCost - pointsBalance} more points`}
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+              <Button
+                size="sm"
+                disabled={!canAfford || redeemingId === rule.id}
+                onClick={() => handleRedeem(rule.id)}
+                className="shrink-0 h-8 px-3 text-xs font-semibold shadow-xs"
+              >
+                {redeemingId === rule.id && (
+                  <Loader2 className="size-3.5 animate-spin mr-1" aria-hidden="true" />
+                )}
+                {redeemingId === rule.id
+                  ? "Redeeming…"
+                  : canAfford
+                    ? "Redeem"
+                    : `Need ${rule.pointsCost - pointsBalance} pts`}
+              </Button>
+            </div>
           );
         })}
       </div>
