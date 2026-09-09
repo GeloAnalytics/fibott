@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta http-equiv="pragma" content="no-cache" />
+<meta http-equiv="expires" content="-1" />
+<title>FiBott Login</title>
+
+$(if chap-id)
+<script type="text/javascript" src="/md5.js"></script>
+<script type="text/javascript">
+  function doLogin() {
+    document.sendin.username.value = document.login.username.value;
+    document.sendin.password.value =
+      hexMD5('$(chap-id)' + document.login.username.value + '$(chap-challenge)');
+    document.sendin.dst.value = document.login.dst.value;
+    document.sendin.popup.value = document.login.popup.value;
+    document.sendin.submit();
+    return false;
+  }
+</script>
+$(endif)
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg-0:#0b1410;
+    --bg-1:#0f1c16;
+    --bg-2:#13241c;
+    --surface:rgba(22, 38, 30, 0.55);
+    --surface-solid:#152a21;
+    --border-soft:rgba(168, 219, 188, 0.14);
+    --border-strong:rgba(168, 219, 188, 0.28);
+
+    --leaf:#5FE08C;
+    --leaf-dim:#3FAE6B;
+    --leaf-glow:rgba(95, 224, 140, 0.35);
+
+    --amber:#FFC857;
+    --amber-dim:#E0A93E;
+
+    --text-hi:#EAF6EF;
+    --text-mid:#A9C2B4;
+    --text-low:#5E7569;
+
+    --danger:#FF6B6B;
+    --danger-bg:rgba(255, 107, 107, 0.10);
+    --danger-border:rgba(255, 107, 107, 0.28);
+
+    --radius-lg:22px;
+    --radius-md:14px;
+    --radius-sm:10px;
+
+    --ease:cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  *{box-sizing:border-box;}
+
+  html,body{
+    margin:0;
+    padding:0;
+    min-height:100%;
+  }
+
+  body{
+    font-family:'Inter', system-ui, sans-serif;
+    color:var(--text-hi);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    position:relative;
+    overflow-x:hidden;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(95,224,140,0.10), transparent 55%),
+      radial-gradient(circle at 85% 88%, rgba(255,200,87,0.07), transparent 50%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+    background-attachment:fixed;
+  }
+
+  /* ambient breathing glow, subtle and slow */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:-20%;
+    background:
+      radial-gradient(40% 35% at 22% 20%, var(--leaf-glow), transparent 70%);
+    opacity:0.35;
+    filter:blur(40px);
+    animation:breathe 9s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  @keyframes breathe{
+    0%, 100% { opacity:0.22; transform:scale(1); }
+    50%      { opacity:0.40; transform:scale(1.06); }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    body::before{ animation:none; }
+  }
+
+  .card{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width:380px;
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);
+    padding:36px 30px 28px;
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:
+      0 30px 60px -20px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.02) inset;
+    animation:rise 0.6s var(--ease) both;
+  }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(14px) scale(0.98); }
+    to{ opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .card{ animation:none; }
+  }
+
+  /* ---------- Header ---------- */
+
+  .brand{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin-bottom:6px;
+  }
+
+  .brand-mark{
+    width:34px;
+    height:34px;
+    border-radius:10px;
+    background:linear-gradient(140deg, var(--leaf) 0%, var(--leaf-dim) 100%);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 6px 16px -4px var(--leaf-glow);
+    flex-shrink:0;
+  }
+
+  .brand-mark svg{ width:19px; height:19px; }
+
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:21px;
+    font-weight:700;
+    letter-spacing:0.01em;
+    margin:0;
+    color:var(--text-hi);
+  }
+
+  .info{
+    text-align:center;
+    color:var(--text-mid);
+    font-size:13.5px;
+    line-height:1.5;
+    margin:0 0 26px;
+  }
+
+  /* ---------- Alert ---------- */
+
+  .alert{
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    color:var(--danger);
+    background:var(--danger-bg);
+    border:1px solid var(--danger-border);
+    padding:12px 14px;
+    border-radius:var(--radius-sm);
+    margin-bottom:18px;
+    font-size:13.5px;
+    font-weight:600;
+    text-align:left;
+    line-height:1.4;
+    animation:shake 0.4s var(--ease);
+  }
+
+  .alert svg{ flex-shrink:0; margin-top:1px; }
+
+  @keyframes shake{
+    0%, 100% { transform:translateX(0); }
+    25%      { transform:translateX(-4px); }
+    75%      { transform:translateX(4px); }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .alert{ animation:none; }
+  }
+
+  /* ---------- Voucher "ticket stub" field ---------- */
+  /* Signature element: styled after the physical receipt this code came from */
+
+  .ticket{
+    position:relative;
+    margin-bottom:20px;
+  }
+
+  .ticket-label{
+    display:block;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--leaf);
+    margin-bottom:9px;
+    padding-left:2px;
+  }
+
+  .ticket-field{
+    position:relative;
+    border-radius:var(--radius-md);
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 6px,
+        rgba(95,224,140,0.45) 6px,
+        rgba(95,224,140,0.45) 12px
+      ) left 0 / 2px 100% no-repeat,
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 6px,
+        rgba(95,224,140,0.45) 6px,
+        rgba(95,224,140,0.45) 12px
+      ) right 0 / 2px 100% no-repeat,
+      linear-gradient(180deg, #0E1F16 0%, #0A1810 100%);
+    border:1px solid var(--border-strong);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);
+    padding:2px 10px;
+  }
+
+  /* punched notches, like a torn ticket */
+  .ticket-field::before,
+  .ticket-field::after{
+    content:"";
+    position:absolute;
+    width:14px;
+    height:14px;
+    background:var(--bg-1);
+    border-radius:50%;
+    top:50%;
+    transform:translateY(-50%);
+    box-shadow:0 0 0 1px var(--border-soft) inset;
+  }
+
+  .ticket-field::before{ left:-7px; }
+  .ticket-field::after{ right:-7px; }
+
+  input[name="username"]{
+    width:100%;
+    border:none;
+    background:transparent;
+    padding:15px 8px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:21px;
+    font-weight:700;
+    letter-spacing:0.22em;
+    text-align:center;
+    text-transform:uppercase;
+    color:var(--amber);
+    caret-color:var(--leaf);
+  }
+
+  input[name="username"]::placeholder{
+    color:var(--text-low);
+    letter-spacing:0.14em;
+    font-weight:600;
+    text-transform:uppercase;
+  }
+
+  input[name="username"]:focus{
+    outline:none;
+  }
+
+  .ticket-field:has(input:focus){
+    border-color:var(--leaf);
+    box-shadow:
+      0 0 0 3px var(--leaf-glow),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  /* fallback focus ring for browsers without :has() support */
+  input[name="username"]:focus-visible{
+    box-shadow:0 0 0 3px var(--leaf-glow);
+    border-radius:8px;
+  }
+
+  /* ---------- Submit button ---------- */
+
+  button.activate{
+    width:100%;
+    border:none;
+    border-radius:var(--radius-md);
+    padding:16px 18px;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:15.5px;
+    font-weight:700;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    color:#0A1810;
+    background:linear-gradient(135deg, var(--leaf) 0%, var(--amber) 130%);
+    cursor:pointer;
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    transition:transform 0.18s var(--ease), box-shadow 0.18s var(--ease), filter 0.18s var(--ease);
+    box-shadow:0 10px 24px -8px rgba(95,224,140,0.45);
+  }
+
+  button.activate:hover{
+    filter:brightness(1.06);
+    box-shadow:0 14px 30px -8px rgba(95,224,140,0.55);
+  }
+
+  button.activate:active{
+    transform:scale(0.97);
+    box-shadow:0 6px 16px -6px rgba(95,224,140,0.45);
+  }
+
+  button.activate:focus-visible{
+    outline:2px solid var(--text-hi);
+    outline-offset:3px;
+  }
+
+  /* sheen sweep on hover */
+  button.activate::after{
+    content:"";
+    position:absolute;
+    top:0; left:-60%;
+    width:40%; height:100%;
+    background:linear-gradient(120deg, transparent, rgba(255,255,255,0.35), transparent);
+    transform:skewX(-20deg);
+    transition:left 0.55s ease;
+  }
+
+  button.activate:hover::after{ left:130%; }
+
+  .btn-spinner{
+    width:16px; height:16px;
+    border-radius:50%;
+    border:2px solid rgba(10,24,16,0.3);
+    border-top-color:#0A1810;
+    display:none;
+    animation:spin 0.7s linear infinite;
+  }
+
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  form.is-loading button.activate .btn-label{
+    opacity:0.001;
+    position:absolute;
+  }
+
+  form.is-loading button.activate .btn-spinner{
+    display:inline-block;
+  }
+
+  form.is-loading button.activate{
+    cursor:wait;
+  }
+
+  /* ---------- Footer ---------- */
+
+  .footer{
+    margin-top:24px;
+    padding-top:18px;
+    border-top:1px solid var(--border-soft);
+    text-align:center;
+    font-size:11.5px;
+    color:var(--text-low);
+    line-height:1.6;
+  }
+
+  .footer strong{
+    color:var(--text-mid);
+    font-weight:600;
+  }
+
+  /* ---------- Responsive ---------- */
+
+  @media (max-width:380px){
+    .card{
+      padding:30px 22px 24px;
+      border-radius:18px;
+    }
+
+    h1{
+      font-size:19px;
+    }
+
+    input[name="username"]{
+      font-size:18px;
+      letter-spacing:0.16em;
+    }
+  }
+
+  @media (min-width:480px){
+    .card{
+      max-width:400px;
+      padding:42px 38px 32px;
+    }
+  }
+
+  @media (min-height:780px){
+    body{
+      align-items:center;
+    }
+  }
+</style>
+</head>
+
+<body>
+
+  <main class="card" role="main">
+
+    <div class="brand">
+      <h1>FiBott</h1>
+    </div>
+
+    <p class="info">Enter the code from your vending machine receipt to get online.</p>
+
+    <!-- Display Errors (e.g. "Invalid Voucher") -->
+    $(if error)
+    <div class="alert" role="alert">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 8v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="16" r="1" fill="currentColor"/>
+      </svg>
+      <span>$(error)</span>
+    </div>
+    $(endif)
+
+    <!--
+      RouterOS HTTP-CHAP requires a separate form containing
+      the calculated challenge-response password.
+      
+      Fibott creates HotSpot users with:
+        username = voucher code
+        password = voucher code
+    -->
+    $(if chap-id)
+    <form name="sendin" action="$(link-login-only)" method="post">
+      <input type="hidden" name="username" />
+      <input type="hidden" name="password" />
+      <input type="hidden" name="dst" value="$(link-orig)" />
+      <input type="hidden" name="popup" value="true" />
+    </form>
+    $(endif)
+
+    <form
+      name="login"
+      action="$(link-login-only)"
+      method="post"
+      autocomplete="off"
+      id="loginForm"
+      $(if chap-id) onsubmit="return doLogin()" $(endif)
+    >
+
+      <input type="hidden" name="dst" value="$(link-orig)" />
+      <input type="hidden" name="popup" value="true" />
+
+      <div class="ticket">
+        <label class="ticket-label" for="username">Voucher code</label>
+
+        <div class="ticket-field">
+          <input
+            id="username"
+            name="username"
+            type="text"
+            value="$(username)"
+            placeholder="XXXX-XXXX"
+            autofocus
+            autocomplete="off"
+            inputmode="text"
+            aria-label="Voucher code from vending machine"
+            aria-required="true"
+          />
+        </div>
+      </div>
+
+      <!--
+        Password is not entered separately by the user.
+        Fibott creates the MikroTik password equal to the voucher code.
+        doLogin() above uses username as the CHAP password.
+      -->
+      <input name="password" type="hidden" value="" />
+
+      <button type="submit" class="activate" aria-label="Activate internet access">
+        <span class="btn-label">Activate internet</span>
+        <span class="btn-spinner" aria-hidden="true"></span>
+      </button>
+
+    </form>
+
+    <div class="footer">
+      Vending ID: <strong>$(identity)</strong><br>
+      Powered by MikroTik
+    </div>
+
+  </main>
+
+  <script>
+    // Button loading feedback — purely cosmetic, does not block native submit.
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+      var input = document.getElementById('username');
+
+      if (!input.value || !input.value.trim()) {
+        e.preventDefault();
+        input.focus();
+        return;
+      }
+
+      this.classList.add('is-loading');
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta http-equiv="pragma" content="no-cache" />
+<meta http-equiv="expires" content="-1" />
+<meta http-equiv="refresh" content="2; url=$(link-status)">
+<title>FiBott Redirect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#0b1410;
+    --bg-1:#0f1c16;
+    --bg-2:#13241c;
+    --surface:rgba(22, 38, 30, 0.55);
+    --border-soft:rgba(168, 219, 188, 0.14);
+
+    --leaf:#5FE08C;
+    --leaf-dim:#3FAE6B;
+    --leaf-glow:rgba(95, 224, 140, 0.35);
+
+    --amber:#FFC857;
+
+    --text-hi:#EAF6EF;
+    --text-mid:#A9C2B4;
+    --text-low:#5E7569;
+
+    --radius-lg:22px;
+
+    --ease:cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  *{box-sizing:border-box;}
+
+  html,body{ margin:0; padding:0; min-height:100%; }
+
+  body{
+    font-family:'Inter', system-ui, sans-serif;
+    color:var(--text-hi);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    position:relative;
+    overflow-x:hidden;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(95,224,140,0.10), transparent 55%),
+      radial-gradient(circle at 85% 88%, rgba(255,200,87,0.07), transparent 50%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+    background-attachment:fixed;
+  }
+
+  body::before{
+    content:"";
+    position:fixed;
+    inset:-20%;
+    background:radial-gradient(40% 35% at 22% 20%, var(--leaf-glow), transparent 70%);
+    opacity:0.35;
+    filter:blur(40px);
+    animation:breathe 9s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  @keyframes breathe{
+    0%, 100% { opacity:0.22; transform:scale(1); }
+    50%      { opacity:0.40; transform:scale(1.06); }
+  }
+
+  @media (prefers-reduced-motion: reduce){ body::before{ animation:none; } }
+
+  .card{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width:360px;
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);
+    padding:40px 32px 32px;
+    text-align:center;
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:
+      0 30px 60px -20px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.02) inset;
+    animation:rise 0.6s var(--ease) both;
+  }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(14px) scale(0.98); }
+    to{ opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce){ .card{ animation:none; } }
+
+  /* ---------- Signature element: ring with growing leaf ---------- */
+  /* Replaces the generic two-tone spinner with something specific
+     to the brand — connection arriving, rendered as growth. */
+
+  .ring-wrap{
+    position:relative;
+    width:84px;
+    height:84px;
+    margin:6px auto 22px;
+  }
+
+  .ring-track{
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    border:4px solid rgba(95, 224, 140, 0.12);
+  }
+
+  .ring-progress{
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    border:4px solid transparent;
+    border-top-color:var(--leaf);
+    border-right-color:var(--leaf);
+    animation:spin 1.1s linear infinite;
+    filter:drop-shadow(0 0 6px var(--leaf-glow));
+  }
+
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .ring-icon{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .ring-icon svg{
+    width:30px;
+    height:30px;
+    animation:grow 1.8s var(--ease) infinite;
+    transform-origin:bottom center;
+  }
+
+  @keyframes grow{
+    0%, 100% { transform:scale(0.92); opacity:0.85; }
+    50%      { transform:scale(1.04); opacity:1; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .ring-progress{ animation:none; border-top-color:var(--leaf); border-right-color:transparent; }
+    .ring-icon svg{ animation:none; }
+  }
+
+  /* ---------- Text ---------- */
+
+  .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    color:var(--leaf);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+
+  .eyebrow svg{ width:11px; height:11px; }
+
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:21px;
+    font-weight:700;
+    letter-spacing:0.01em;
+    margin:0 0 8px;
+    color:var(--text-hi);
+  }
+
+  p.status{
+    color:var(--text-mid);
+    font-size:14px;
+    margin:0 0 4px;
+  }
+
+  /* ---------- Fallback link ---------- */
+
+  .fallback{
+    margin-top:26px;
+    padding-top:16px;
+    border-top:1px solid var(--border-soft);
+  }
+
+  .fallback a{
+    color:var(--text-low);
+    text-decoration:none;
+    font-size:12.5px;
+    font-weight:500;
+    transition:color 0.18s var(--ease);
+    border-bottom:1px solid transparent;
+  }
+
+  .fallback a:hover{
+    color:var(--amber);
+    border-bottom-color:var(--amber);
+  }
+
+  .fallback a:focus-visible{
+    outline:2px solid var(--leaf);
+    outline-offset:3px;
+    border-radius:4px;
+  }
+
+  /* ---------- Responsive ---------- */
+
+  @media (max-width:380px){
+    .card{ padding:34px 24px 26px; border-radius:18px; }
+    h1{ font-size:19px; }
+    .ring-wrap{ width:72px; height:72px; }
+  }
+
+  @media (min-width:480px){
+    .card{ max-width:380px; padding:46px 38px 36px; }
+  }
+</style>
+</head>
+<body>
+
+  <main class="card" role="main" aria-live="polite">
+
+    <div class="ring-wrap" aria-hidden="true">
+      <div class="ring-track"></div>
+      <div class="ring-progress"></div>
+      <div class="ring-icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C7 2 3 6 3 11c0 5 4 9 8 11 1-1 4-3 4-3" stroke="#5FE08C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 11c0-3 2-6 6-7-1 4-2 7-6 8z" fill="#5FE08C"/>
+          <path d="M12 22V11" stroke="#5FE08C" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <span class="eyebrow">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Logged in
+    </span>
+
+    <h1>You're connected</h1>
+    <p class="status">Activating your internet&hellip;</p>
+
+    <div class="fallback">
+      <a href="$(link-status)">Click here if not redirected</a>
+    </div>
+
+  </main>
+
+</body>
+</html>

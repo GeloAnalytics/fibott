@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta http-equiv="pragma" content="no-cache" />
+<meta http-equiv="expires" content="-1" />
+<meta http-equiv="refresh" content="$(refresh-timeout-secs)">
+<title>FiBott Status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#0b1410;
+    --bg-1:#0f1c16;
+    --bg-2:#13241c;
+    --surface:rgba(22, 38, 30, 0.55);
+    --border-soft:rgba(168, 219, 188, 0.14);
+    --border-strong:rgba(168, 219, 188, 0.28);
+
+    --leaf:#5FE08C;
+    --leaf-dim:#3FAE6B;
+    --leaf-glow:rgba(95, 224, 140, 0.35);
+
+    --amber:#FFC857;
+    --amber-dim:#E0A93E;
+
+    --text-hi:#EAF6EF;
+    --text-mid:#A9C2B4;
+    --text-low:#5E7569;
+
+    --danger:#FF6B6B;
+    --danger-bg:rgba(255, 107, 107, 0.10);
+    --danger-border:rgba(255, 107, 107, 0.24);
+
+    --radius-lg:22px;
+    --radius-md:14px;
+
+    --ease:cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{ margin:0; padding:0; min-height:100%; }
+
+  body{
+    font-family:'Inter', system-ui, sans-serif;
+    color:var(--text-hi);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    position:relative;
+    overflow-x:hidden;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(95,224,140,0.10), transparent 55%),
+      radial-gradient(circle at 85% 88%, rgba(255,200,87,0.07), transparent 50%),
+      linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
+    background-attachment:fixed;
+  }
+
+  body::before{
+    content:"";
+    position:fixed;
+    inset:-20%;
+    background:radial-gradient(40% 35% at 78% 16%, var(--leaf-glow), transparent 70%);
+    opacity:0.28;
+    filter:blur(42px);
+    animation:breathe 10s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  @keyframes breathe{
+    0%, 100% { opacity:0.18; transform:scale(1); }
+    50%      { opacity:0.32; transform:scale(1.05); }
+  }
+
+  @media (prefers-reduced-motion: reduce){ body::before{ animation:none; } }
+
+  .card{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width:380px;
+    background:var(--surface);
+    border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);
+    padding:34px 30px 28px;
+    backdrop-filter:blur(18px) saturate(140%);
+    -webkit-backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:
+      0 30px 60px -20px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.02) inset;
+    animation:rise 0.6s var(--ease) both;
+  }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(14px) scale(0.98); }
+    to{ opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce){ .card{ animation:none; } }
+
+  /* ---------- Header ---------- */
+
+  .status{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin-bottom:6px;
+  }
+
+  .status-mark{
+    width:34px;
+    height:34px;
+    border-radius:10px;
+    background:linear-gradient(140deg, var(--leaf) 0%, var(--leaf-dim) 100%);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 6px 16px -4px var(--leaf-glow);
+    flex-shrink:0;
+    position:relative;
+  }
+
+  /* live pulse dot */
+  .status-mark::after{
+    content:"";
+    position:absolute;
+    top:-3px; right:-3px;
+    width:9px; height:9px;
+    border-radius:50%;
+    background:var(--amber);
+    box-shadow:0 0 0 2px var(--bg-1);
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse{
+    0%, 100% { opacity:1; transform:scale(1); }
+    50%      { opacity:0.5; transform:scale(0.85); }
+  }
+
+  @media (prefers-reduced-motion: reduce){ .status-mark::after{ animation:none; } }
+
+  .status-mark svg{ width:16px; height:16px; }
+
+  h2{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:18px;
+    font-weight:700;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    margin:0;
+    color:var(--text-hi);
+  }
+
+  .subtitle{
+    text-align:center;
+    color:var(--text-low);
+    font-size:12.5px;
+    margin:0 0 22px;
+  }
+
+  /* ---------- Receipt ---------- */
+
+  .receipt{
+    position:relative;
+    border-radius:var(--radius-md);
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0, transparent 6px,
+        rgba(95,224,140,0.32) 6px, rgba(95,224,140,0.32) 12px
+      ) left 0 / 2px 100% no-repeat,
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0, transparent 6px,
+        rgba(95,224,140,0.32) 6px, rgba(95,224,140,0.32) 12px
+      ) right 0 / 2px 100% no-repeat,
+      linear-gradient(180deg, #0E1F16 0%, #0A1810 100%);
+    border:1px solid var(--border-soft);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);
+    padding:6px 18px;
+  }
+
+  .receipt::before,
+  .receipt::after{
+    content:"";
+    position:absolute;
+    width:14px; height:14px;
+    background:var(--bg-1);
+    border-radius:50%;
+    top:50%;
+    transform:translateY(-50%);
+    box-shadow:0 0 0 1px var(--border-soft) inset;
+  }
+  .receipt::before{ left:-7px; }
+  .receipt::after{ right:-7px; }
+
+  .stat-row{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+    padding:13px 0;
+    border-bottom:1px dashed var(--border-soft);
+  }
+  .stat-row:last-child{ border-bottom:none; }
+
+  .stat-label{
+    color:var(--text-mid);
+    font-size:12.5px;
+    font-weight:500;
+    letter-spacing:0.03em;
+    white-space:nowrap;
+  }
+
+  .stat-value{
+    font-family:'JetBrains Mono', monospace;
+    color:var(--text-hi);
+    font-weight:700;
+    font-size:14px;
+    letter-spacing:0.01em;
+    text-align:right;
+    word-break:break-word;
+  }
+
+  .stat-value.accent{ color:var(--amber); }
+  .stat-value.live{ color:var(--leaf); }
+
+  /* ---------- Usage bar ---------- */
+
+  .usage-bar-wrap{
+    margin:18px 2px 6px;
+  }
+
+  .usage-bar-labels{
+    display:flex;
+    justify-content:space-between;
+    font-size:10.5px;
+    color:var(--text-low);
+    margin-bottom:6px;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+  }
+
+  .usage-bar{
+    height:6px;
+    border-radius:4px;
+    background:rgba(255,255,255,0.06);
+    overflow:hidden;
+  }
+
+  .usage-bar-fill{
+    height:100%;
+    border-radius:4px;
+    background:linear-gradient(90deg, var(--leaf) 0%, var(--amber) 100%);
+    width:var(--usage-pct, 40%);
+    transition:width 0.6s var(--ease);
+  }
+
+  /* ---------- Disconnect button ---------- */
+
+  .btn-disconnect{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    width:100%;
+    border:1px solid var(--danger-border);
+    border-radius:var(--radius-md);
+    padding:15px 18px;
+    margin-top:22px;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+    font-weight:700;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    color:var(--danger);
+    background:var(--danger-bg);
+    cursor:pointer;
+    transition:transform 0.18s var(--ease), background 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+
+  .btn-disconnect:hover{
+    background:rgba(255, 107, 107, 0.16);
+  }
+
+  .btn-disconnect:active{
+    transform:scale(0.97);
+  }
+
+  .btn-disconnect:focus-visible{
+    outline:2px solid var(--danger);
+    outline-offset:3px;
+  }
+
+  .btn-disconnect svg{ width:14px; height:14px; flex-shrink:0; }
+
+  /* ---------- Responsive ---------- */
+
+  @media (max-width:380px){
+    .card{ padding:28px 22px 24px; border-radius:18px; }
+    h2{ font-size:16px; }
+    .stat-value{ font-size:13px; }
+  }
+
+  @media (min-width:480px){
+    .card{ max-width:400px; padding:40px 36px 32px; }
+  }
+</style>
+</head>
+<body>
+
+  <main class="card" role="main">
+
+    <div class="status">
+      <h2>Live usage</h2>
+    </div>
+    <p class="subtitle">Updates automatically while you're connected.</p>
+
+    <div class="receipt" role="group" aria-label="Current session usage">
+      <div class="stat-row">
+        <span class="stat-label">Voucher</span>
+        <span class="stat-value">$(username)</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Time left</span>
+        <span class="stat-value live">$(session-time-left)</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Data used</span>
+        <span class="stat-value accent" id="data-used">Calculating...</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Data limit</span>
+        <span class="stat-value" id="data-limit">$(limit-bytes-total)</span>
+      </div>
+    </div>
+
+    <form action="$(link-logout)" name="logout">
+      <button type="submit" class="btn-disconnect">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M12 2v8M6.3 6.3a8 8 0 1011.4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Disconnect
+      </button>
+    </form>
+
+  </main>
+<script>
+  function formatBytes(bytes) {
+    bytes = Number(bytes);
+
+    if (!Number.isFinite(bytes) || bytes < 0) {
+      return "0 B";
+    }
+
+    const units = ["B", "KiB", "MiB", "GiB"];
+    let i = 0;
+
+    while (bytes >= 1024 && i < units.length - 1) {
+      bytes /= 1024;
+      i++;
+    }
+
+    return bytes.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+  }
+
+  // MikroTik traffic counters
+  const bytesIn = Number("$(bytes-in)");
+  const bytesOut = Number("$(bytes-out)");
+
+  // Total usage = upload + download
+  const totalUsed = bytesIn + bytesOut;
+
+  document.getElementById("data-used").textContent =
+    formatBytes(totalUsed);
+
+  // Format the configured total data limit
+  const dataLimit = document.getElementById("data-limit");
+
+  if (dataLimit) {
+    const limitBytes = Number(dataLimit.textContent);
+
+    if (Number.isFinite(limitBytes) && limitBytes > 0) {
+      dataLimit.textContent = formatBytes(limitBytes);
+    }
+  }
+</script>
+</body>
+</html>
