@@ -161,7 +161,10 @@
   html,
   body {
     @apply bg-background text-foreground font-sans;
+    width: 100%;
+    max-width: 100vw;
     overflow-x: hidden;
+    overflow-y: auto;
     -webkit-tap-highlight-color: transparent;
   }
   h1,
