@@ -18,21 +18,20 @@ export function StatCard({
 }) {
   return (
     <Card className={cn("h-full", className)}>
-      <CardHeader className="pb-2">
+      <CardHeader className="p-3 sm:p-5 pb-1 sm:pb-1.5">
         <CardTitle
           className={cn(
-            "font-medium text-muted-foreground",
-            size === "lg" ? "text-sm" : "text-sm"
+            "font-medium text-muted-foreground text-xs sm:text-sm"
           )}
         >
           {label}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3 sm:p-5 pt-0 sm:pt-0">
         <div
           className={cn(
             "font-semibold tracking-tight tabular-nums",
-            size === "lg" ? "text-5xl" : "text-3xl",
+            size === "lg" ? "text-2xl sm:text-5xl" : "text-xl sm:text-3xl",
             emphasis && "text-primary"
           )}
         >

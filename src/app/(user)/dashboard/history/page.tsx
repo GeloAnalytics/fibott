@@ -39,7 +39,7 @@ export default async function HistoryPage() {
           description="Your bottle and can deposits will show up here once you start recycling."
         />
       ) : (
-        <div className="rounded-lg border">
+        <div className="rounded-lg border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

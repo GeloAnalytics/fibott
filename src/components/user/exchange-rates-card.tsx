@@ -29,7 +29,7 @@ export function ExchangeRatesCard({
   const activeVouchers = voucherRules.filter((v) => v.isActive);
 
   return (
-    <div className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+    <div className="rounded-xl border bg-card p-4 sm:p-5 text-card-foreground shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">

@@ -54,8 +54,8 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
+    <div className="space-y-6">
+      <h1 className="text-xl sm:text-2xl font-semibold">Dashboard</h1>
 
       {/* Live Exchange Rates */}
       <ExchangeRatesCard rewardRules={rewardRules} voucherRules={voucherRules} />
@@ -63,9 +63,9 @@ export default async function DashboardPage() {
       {/* Active vouchers — shown prominently if user has any */}
       {activeVouchersList.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-lg font-medium">Your Active Vouchers</h2>
+          <h2 className="text-base sm:text-lg font-medium">Your Active Vouchers</h2>
           {activeVouchersList.map((voucher) => (
-            <div key={voucher.id} className="rounded-lg border bg-card p-4 space-y-2">
+            <div key={voucher.id} className="rounded-lg border bg-card p-3.5 sm:p-4 space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="font-mono text-sm font-semibold tracking-wider break-all">
                   {voucher.code}
@@ -91,14 +91,14 @@ export default async function DashboardPage() {
       )}
 
       {/* Primary actions — shown first so they are visible without scrolling on mobile */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div>
-          <h2 className="mb-3 text-lg font-medium">Recycle</h2>
+          <h2 className="mb-2.5 text-base sm:text-lg font-medium">Recycle</h2>
           <RecyclingSession />
         </div>
 
         {activeVouchers === 0 && user.pointsBalance > 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             <Link href="/dashboard/wallet" className="font-medium text-primary hover:underline">
               Redeem your points for a WiFi voucher →
             </Link>
@@ -108,14 +108,14 @@ export default async function DashboardPage() {
 
       <HeroStat value={user.pointsBalance} label="Points balance" qualifier={qualifier} />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Items recycled" value={itemsSubmitted} />
-        <StatCard label="Active vouchers" value={activeVouchers} />
-        <StatCard label="Recent transactions" value={recentActivity.length} />
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <StatCard label="Recycled" value={itemsSubmitted} />
+        <StatCard label="Vouchers" value={activeVouchers} />
+        <StatCard label="Activity" value={recentActivity.length} />
       </div>
 
       <div>
-        <h2 className="mb-3 text-lg font-medium">Recent activity</h2>
+        <h2 className="mb-3 text-base sm:text-lg font-medium">Recent activity</h2>
         {recentActivity.length === 0 ? (
           <EmptyState
             title="No activity yet"

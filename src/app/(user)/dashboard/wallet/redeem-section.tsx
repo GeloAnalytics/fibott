@@ -64,28 +64,34 @@ export function RedeemSection({
 
       {redeemedCode && <VoucherActions code={redeemedCode} />}
 
-      <div className="grid gap-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         {rules.map((rule) => {
           const canAfford = pointsBalance >= rule.pointsCost;
           return (
-            <Card key={rule.id}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{rule.label}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground tabular-nums">
-                  {rule.pointsCost} points &middot; {rule.durationMinutes} minutes of WiFi
-                </p>
+            <Card key={rule.id} className="overflow-hidden border shadow-xs">
+              <CardContent className="p-4 flex flex-col justify-between gap-3 h-full">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold text-base">{rule.label}</h3>
+                    <span className="font-bold text-sm text-primary tabular-nums">
+                      {rule.pointsCost} pts
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                    {rule.pointsCost} points &middot; {rule.durationMinutes} minutes of WiFi
+                  </p>
+                </div>
                 <Button
                   className="w-full"
+                  size="sm"
                   disabled={!canAfford || redeemingId === rule.id}
                   onClick={() => handleRedeem(rule.id)}
                 >
                   {redeemingId === rule.id && (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    <Loader2 className="size-3.5 animate-spin mr-1.5" aria-hidden="true" />
                   )}
                   {redeemingId === rule.id
-                    ? "Redeeming"
+                    ? "Redeeming..."
                     : canAfford
                       ? "Redeem"
                       : `Need ${rule.pointsCost - pointsBalance} more points`}

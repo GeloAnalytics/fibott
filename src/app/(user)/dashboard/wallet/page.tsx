@@ -72,8 +72,8 @@ export default async function WalletPage() {
   );
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Points Wallet</h1>
+    <div className="space-y-6">
+      <h1 className="text-xl sm:text-2xl font-semibold">Points Wallet</h1>
 
       <HeroStat
         value={user.pointsBalance}
@@ -81,7 +81,7 @@ export default async function WalletPage() {
         qualifier={`${earned} points earned overall, ${spent} spent on vouchers so far.`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <StatCard label="Points earned" value={earned} />
         <StatCard label="Points spent" value={spent} />
       </div>
@@ -89,7 +89,7 @@ export default async function WalletPage() {
       <RedeemSection rules={voucherRules} pointsBalance={user.pointsBalance} />
 
       <div>
-        <h2 className="mb-3 text-lg font-medium">My vouchers</h2>
+        <h2 className="mb-3 text-base sm:text-lg font-medium">My vouchers</h2>
         {vouchers.length === 0 ? (
           <EmptyState
             title="No vouchers yet"
@@ -100,7 +100,7 @@ export default async function WalletPage() {
             {vouchers.map((voucher) => (
               <div
                 key={voucher.id}
-                className="rounded-lg border bg-card p-4 space-y-3"
+                className="rounded-lg border bg-card p-3.5 sm:p-4 space-y-2.5"
               >
                 {/* Top row: code + status */}
                 <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -133,7 +133,7 @@ export default async function WalletPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-lg font-medium">Transaction history</h2>
+        <h2 className="mb-3 text-base sm:text-lg font-medium">Transaction history</h2>
         {transactions.length === 0 ? (
           <EmptyState title="No transactions yet" />
         ) : (
@@ -141,28 +141,28 @@ export default async function WalletPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Balance after</TableHead>
+                  <TableHead className="text-xs">Date</TableHead>
+                  <TableHead className="text-xs">Type</TableHead>
+                  <TableHead className="text-xs">Source</TableHead>
+                  <TableHead className="text-xs">Amount</TableHead>
+                  <TableHead className="text-xs">Balance after</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {transactions.map((tx) => (
                   <TableRow key={tx.id}>
-                    <TableCell>{formatPHT(tx.createdAt)}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{formatPHT(tx.createdAt)}</TableCell>
                     <TableCell>
-                      <Badge variant={tx.type === "EARN" ? "default" : "secondary"}>
+                      <Badge variant={tx.type === "EARN" ? "default" : "secondary"} className="text-[11px] px-1.5 py-0.5">
                         {tx.type}
                       </Badge>
                     </TableCell>
-                    <TableCell>{tx.source.replace(/_/g, " ")}</TableCell>
-                    <TableCell className="tabular-nums">
+                    <TableCell className="text-xs whitespace-nowrap">{tx.source.replace(/_/g, " ")}</TableCell>
+                    <TableCell className="tabular-nums text-xs font-semibold">
                       {tx.type === "SPEND" ? "-" : "+"}
                       {tx.amount}
                     </TableCell>
-                    <TableCell className="tabular-nums">{tx.balanceAfter}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{tx.balanceAfter}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -15,16 +15,16 @@ export function HeroStat({
   const displayed = useCountUp(value);
 
   return (
-    <div className="rounded-lg border bg-card px-6 py-8 sm:px-8 sm:py-10">
-      <p className="text-sm font-medium text-muted-foreground">{label}</p>
+    <div className="rounded-xl border bg-card p-4 sm:px-8 sm:py-7 shadow-xs">
+      <p className="text-xs sm:text-sm font-medium text-muted-foreground">{label}</p>
       <div
         className={cn(
-          "mt-2 font-display text-6xl font-semibold tracking-[-0.02em] text-primary tabular-nums sm:text-7xl"
+          "mt-1 font-display text-4xl font-bold tracking-tight text-primary tabular-nums sm:text-6xl"
         )}
       >
         {displayed}
       </div>
-      <p className="mt-3 max-w-prose text-base text-foreground">{qualifier}</p>
+      <p className="mt-1.5 text-xs sm:text-sm text-muted-foreground leading-relaxed">{qualifier}</p>
     </div>
   );
 }
