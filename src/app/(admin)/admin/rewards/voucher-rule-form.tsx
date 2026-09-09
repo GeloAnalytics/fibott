@@ -77,10 +77,10 @@ export function VoucherRuleForm({
 
   return (
     <Card>
-      <CardContent className="pt-6">
+      <CardContent className="p-4 sm:p-6">
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="flex flex-wrap items-end gap-4"
+          className="flex flex-col sm:flex-row sm:items-end justify-between gap-3"
         >
           <div className="space-y-2">
             <Label>{label}</Label>
@@ -88,20 +88,20 @@ export function VoucherRuleForm({
               <Input
                 type="number"
                 min={1}
-                className="w-24 tabular-nums"
+                className="w-20 sm:w-24 tabular-nums"
                 {...register("pointsCost", { required: true, valueAsNumber: true })}
               />
               points =
               <Input
                 type="number"
                 min={1}
-                className="w-24 tabular-nums"
+                className="w-20 sm:w-24 tabular-nums"
                 {...register("durationMinutes", { required: true, valueAsNumber: true })}
               />
               minutes
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 pt-2 sm:pt-0">
             <Button type="submit" size="sm" disabled={submitting}>
               {submitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {submitting ? "Saving" : "Save"}

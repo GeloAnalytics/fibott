@@ -55,10 +55,10 @@ export function RewardRuleForm({
 
   return (
     <Card>
-      <CardContent className="pt-6">
+      <CardContent className="p-4 sm:p-6">
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="flex flex-wrap items-end justify-between gap-4"
+          className="flex flex-wrap items-end justify-between gap-3"
         >
           <div className="space-y-2">
             <Label>{MATERIAL_LABEL[materialType] ?? materialType}</Label>

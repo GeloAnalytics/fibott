@@ -55,13 +55,13 @@ function StatBadge({
   icon: React.ReactNode;
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-5 shadow-sm`}>
-      <div className={`mb-2 flex h-9 w-9 items-center justify-center rounded-lg ${color}`}>
+    <div className="rounded-xl border bg-card p-3.5 sm:p-5 shadow-sm">
+      <div className={`mb-2 flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg ${color}`}>
         {icon}
       </div>
-      <p className="text-3xl font-bold tabular-nums">{value}</p>
-      <p className="mt-0.5 text-sm font-medium text-foreground">{label}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
+      <p className="text-2xl sm:text-3xl font-bold tabular-nums">{value}</p>
+      <p className="mt-0.5 text-xs sm:text-sm font-medium text-foreground">{label}</p>
+      {sub && <p className="mt-0.5 text-[11px] sm:text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -263,7 +263,7 @@ export function AdminReportsClient() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -279,7 +279,7 @@ export function AdminReportsClient() {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={fetchData}
-            className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted"
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-xs sm:text-sm font-medium shadow-sm hover:bg-muted"
           >
             <RefreshCw className="h-4 w-4" />
             Refresh
@@ -287,7 +287,7 @@ export function AdminReportsClient() {
           <button
             onClick={exportPDF}
             disabled={exporting}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
           >
             {exporting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -300,21 +300,21 @@ export function AdminReportsClient() {
       </div>
 
       {/* KPI Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatBadge
-          label="Plastic Bottles Recycled"
+          label="Plastic Bottles"
           value={summary.totalBottles.toLocaleString()}
           color="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
           icon={<span className="text-base">🍾</span>}
         />
         <StatBadge
-          label="Aluminum Cans Recycled"
+          label="Aluminum Cans"
           value={summary.totalCans.toLocaleString()}
           color="bg-sky-500/10 text-sky-600 dark:text-sky-400"
           icon={<span className="text-base">🥤</span>}
         />
         <StatBadge
-          label="Total Accepted Deposits"
+          label="Accepted Deposits"
           value={summary.totalAccepted.toLocaleString()}
           color="bg-violet-500/10 text-violet-600 dark:text-violet-400"
           icon={<Recycle className="h-5 w-5" />}
@@ -322,7 +322,7 @@ export function AdminReportsClient() {
         <StatBadge
           label="Rejected Items"
           value={summary.totalRejected.toLocaleString()}
-          sub="Did not meet classification threshold"
+          sub="Under threshold"
           color="bg-rose-500/10 text-rose-600 dark:text-rose-400"
           icon={<BarChart3 className="h-5 w-5" />}
         />
@@ -333,17 +333,17 @@ export function AdminReportsClient() {
           icon={<Users className="h-5 w-5" />}
         />
         <StatBadge
-          label="Users Who Have Deposited"
+          label="Active Recyclers"
           value={summary.activeUsers.toLocaleString()}
-          sub={`${summary.totalUsers > 0 ? Math.round((summary.activeUsers / summary.totalUsers) * 100) : 0}% of all registered users`}
+          sub={`${summary.totalUsers > 0 ? Math.round((summary.activeUsers / summary.totalUsers) * 100) : 0}% of users`}
           color="bg-teal-500/10 text-teal-600 dark:text-teal-400"
           icon={<Trophy className="h-5 w-5" />}
         />
       </div>
 
       {/* Material Breakdown Bar Chart */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
-        <h2 className="mb-5 font-semibold">Material Breakdown</h2>
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
+        <h2 className="mb-4 font-semibold text-base sm:text-lg">Material Breakdown</h2>
         <div className="space-y-4">
           <BarRow
             label="🍾 Plastic Bottles (PET)"
@@ -368,8 +368,8 @@ export function AdminReportsClient() {
 
       {/* Daily Activity (last 30 days) */}
       {daily.length > 0 && (
-        <div className="rounded-xl border bg-card p-6 shadow-sm">
-          <h2 className="mb-5 font-semibold">Daily Activity — Last 30 Days</h2>
+        <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
+          <h2 className="mb-4 font-semibold text-base sm:text-lg">Daily Activity — Last 30 Days</h2>
           <div className="flex h-40 items-end gap-0.5 overflow-x-auto pb-1">
             {daily.map((d) => {
               const h = maxDaily > 0 ? Math.max(4, Math.round((d.count / maxDaily) * 148)) : 4;

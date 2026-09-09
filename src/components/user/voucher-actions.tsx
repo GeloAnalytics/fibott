@@ -81,7 +81,7 @@ export function VoucherActions({
   }
 
   return (
-    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 sm:p-5 space-y-4 shadow-xs">
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3.5 sm:p-5 space-y-3 sm:space-y-4 shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ export function VoucherActions({
         </div>
 
         <div className="flex items-center gap-2 font-mono bg-background border border-border rounded-lg px-3 py-1.5 justify-between sm:justify-start">
-          <span className="text-xl font-bold tracking-wider text-foreground">{code}</span>
+          <span className="text-lg sm:text-xl font-bold tracking-wider text-foreground break-all">{code}</span>
           <Button
             type="button"
             size="icon"
@@ -112,34 +112,34 @@ export function VoucherActions({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/50">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1 border-t border-border/50">
         <Button
           type="button"
-          size="default"
-          className="gap-2 bg-primary text-primary-foreground font-semibold shadow-xs"
+          size="sm"
+          className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground font-semibold shadow-xs"
           onClick={handleUseVoucher}
         >
-          <Wifi className="size-4" />
-          Use Voucher (Connect to Wi-Fi)
-          <ExternalLink className="size-3.5 opacity-80" />
+          <Wifi className="size-3.5" />
+          Use Voucher (Connect)
+          <ExternalLink className="size-3 opacity-80" />
         </Button>
 
         <Button
           type="button"
-          size="default"
+          size="sm"
           variant="outline"
-          className="gap-1.5"
+          className="w-full sm:w-auto gap-1.5"
           onClick={handleCopy}
         >
-          {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+          {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
           {copied ? "Code Copied!" : "Copy Code"}
         </Button>
 
         <Button
           type="button"
-          size="default"
+          size="sm"
           variant="ghost"
-          className="gap-1 text-xs text-muted-foreground ml-auto"
+          className="w-full sm:w-auto gap-1 text-xs text-muted-foreground sm:ml-auto"
           onClick={() => setShowInstructions(!showInstructions)}
         >
           <HelpCircle className="size-3.5" />

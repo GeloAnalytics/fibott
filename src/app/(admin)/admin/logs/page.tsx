@@ -411,54 +411,54 @@ export default function AdminLogsPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Log Entries</CardTitle>
-            <Server className="size-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-5 pb-1 sm:pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Total Logs</CardTitle>
+            <Server className="size-3.5 sm:size-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{pagination.total}</div>
-            <p className="text-xs text-muted-foreground">Recorded logs in database</p>
+          <CardContent className="p-3 sm:p-5 pt-0 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold tabular-nums">{pagination.total}</div>
+            <p className="text-[11px] sm:text-xs text-muted-foreground">In database</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Hardware Errors</CardTitle>
-            <Cpu className="size-4 text-destructive" />
+          <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-5 pb-1 sm:pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">HW Errors</CardTitle>
+            <Cpu className="size-3.5 sm:size-4 text-destructive" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums text-destructive">
+          <CardContent className="p-3 sm:p-5 pt-0 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold tabular-nums text-destructive">
               {metrics.hardwareErrors}
             </div>
-            <p className="text-xs text-muted-foreground">ESP32-CAM / Kiosk error events</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground">ESP32 events</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">System Errors</CardTitle>
-            <AlertTriangle className="size-4 text-amber-500" />
+          <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-5 pb-1 sm:pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">System Errors</CardTitle>
+            <AlertTriangle className="size-3.5 sm:size-4 text-amber-500" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
+          <CardContent className="p-3 sm:p-5 pt-0 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold tabular-nums">
               {metrics.totalErrors}
             </div>
-            <p className="text-xs text-muted-foreground">API &amp; Router communication failures</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground">API / Router</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Monitoring Status</CardTitle>
-            <CheckCircle2 className="size-4 text-emerald-500" />
+          <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-5 pb-1 sm:pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Monitor</CardTitle>
+            <CheckCircle2 className="size-3.5 sm:size-4 text-emerald-500" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+          <CardContent className="p-3 sm:p-5 pt-0 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">
               {autoRefresh ? "Active" : "Paused"}
             </div>
-            <p className="text-xs text-muted-foreground">Serial monitor alternative active</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground">Live telemetry</p>
           </CardContent>
         </Card>
       </div>

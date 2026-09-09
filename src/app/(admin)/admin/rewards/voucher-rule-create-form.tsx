@@ -48,7 +48,7 @@ export function VoucherRuleCreateForm() {
 
   return (
     <Card className="border-dashed">
-      <CardContent className="pt-6">
+      <CardContent className="p-4 sm:p-6">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
           <p className="text-sm font-medium">Add a new voucher option</p>
           <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">

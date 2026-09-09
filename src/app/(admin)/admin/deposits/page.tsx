@@ -36,7 +36,7 @@ export default async function AdminDepositsPage() {
         <EmptyState title="No deposits yet" />
       ) : (
         <div className="space-y-2">
-          <div className="rounded-lg border">
+          <div className="rounded-lg border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
