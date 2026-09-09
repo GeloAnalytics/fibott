@@ -49,12 +49,12 @@ export function VoucherActions({
 
   if (variant === "compact") {
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-xs font-mono gap-1"
+          className="h-7 px-2 text-xs font-mono gap-1 shrink-0"
           onClick={handleCopy}
           title="Copy voucher code"
         >
@@ -69,7 +69,7 @@ export function VoucherActions({
           type="button"
           size="sm"
           variant="default"
-          className="h-7 px-2.5 text-xs gap-1"
+          className="h-7 px-2.5 text-xs gap-1 shrink-0"
           onClick={handleUseVoucher}
           title="Open HotSpot Login Page"
         >
@@ -93,13 +93,13 @@ export function VoucherActions({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 font-mono bg-background border border-border rounded-lg px-3 py-1.5 justify-between sm:justify-start">
-          <span className="text-lg sm:text-xl font-bold tracking-wider text-foreground break-all">{code}</span>
+        <div className="flex items-center gap-2 font-mono bg-background border border-border rounded-lg px-3 py-1.5 justify-between sm:justify-start min-w-0">
+          <span className="text-base sm:text-xl font-bold tracking-wider text-foreground break-all">{code}</span>
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            className="size-8 ml-2 hover:bg-muted"
+            className="size-8 ml-2 hover:bg-muted shrink-0"
             onClick={handleCopy}
             title="Copy Code"
           >

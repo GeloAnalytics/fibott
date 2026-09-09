@@ -70,16 +70,16 @@ export function RedeemSection({
           return (
             <div
               key={rule.id}
-              className="flex items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs hover:border-primary/40 transition-colors"
+              className="flex items-center justify-between gap-2.5 sm:gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs hover:border-primary/40 transition-colors min-w-0"
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                 <div className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary font-semibold text-sm sm:text-base">
                   📶
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <h3 className="font-semibold text-sm text-foreground">{rule.label}</h3>
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                    <h3 className="font-semibold text-xs sm:text-sm text-foreground truncate">{rule.label}</h3>
+                    <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground shrink-0">
                       {rule.durationMinutes}m
                     </span>
                   </div>
@@ -92,7 +92,7 @@ export function RedeemSection({
                 size="sm"
                 disabled={!canAfford || redeemingId === rule.id}
                 onClick={() => handleRedeem(rule.id)}
-                className="shrink-0 h-8 px-3 text-xs font-semibold shadow-xs"
+                className="shrink-0 h-8 px-2.5 sm:px-3 text-xs font-semibold shadow-xs"
               >
                 {redeemingId === rule.id && (
                   <Loader2 className="size-3.5 animate-spin mr-1" aria-hidden="true" />

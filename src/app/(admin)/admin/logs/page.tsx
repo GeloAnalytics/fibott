@@ -608,7 +608,7 @@ export default function AdminLogsPage() {
 
       {/* Log Detail Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-mono">
               [{selectedLog?.tag}] Log Details
@@ -642,7 +642,7 @@ export default function AdminLogsPage() {
 
       {/* Send Alert Dialog */}
       <Dialog open={alertOpen} onOpenChange={setAlertOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Send className="size-4" />

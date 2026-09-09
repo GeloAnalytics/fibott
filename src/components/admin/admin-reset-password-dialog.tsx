@@ -87,7 +87,7 @@ export function AdminResetPasswordDialog({ user }: AdminResetPasswordDialogProps
         }
       />
 
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <KeyRound className="size-4 text-primary" />

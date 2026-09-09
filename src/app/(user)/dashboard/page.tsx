@@ -106,7 +106,7 @@ export default async function DashboardPage() {
 
       {/* Balance & Quick Stats Card */}
       <div className="rounded-2xl border bg-gradient-to-br from-card to-secondary/30 p-4 sm:p-5 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Points Balance</span>
           <span className="text-xs font-medium text-muted-foreground">{qualifier}</span>
         </div>

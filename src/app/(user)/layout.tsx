@@ -14,14 +14,14 @@ export default async function UserLayout({
   if (session.user.role === "ADMIN") redirect("/admin");
 
   return (
-    <div className="flex flex-1">
+    <div className="flex flex-1 min-w-0 w-full">
       <aside className="hidden w-56 shrink-0 border-r bg-sidebar text-sidebar-foreground sm:block">
         <div className="border-b px-4 py-4">
           <span className="text-lg font-semibold">Fibott</span>
         </div>
         <UserSidebar />
       </aside>
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-w-0 w-full">
         <header className="flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
             <MobileNav title="Fibott">
@@ -34,7 +34,7 @@ export default async function UserLayout({
           </span>
           <SignOutButton />
         </header>
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main className="flex-1 min-w-0 w-full p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

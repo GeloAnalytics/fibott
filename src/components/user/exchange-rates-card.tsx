@@ -29,35 +29,35 @@ export function ExchangeRatesCard({
   const activeVouchers = voucherRules.filter((v) => v.isActive);
 
   return (
-    <div className="rounded-xl border bg-card p-4 sm:p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-        <div className="flex items-center gap-2">
+    <div className="rounded-xl border bg-card p-3.5 sm:p-5 text-card-foreground shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-3">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <Coins className="h-4 w-4" />
           </div>
-          <div>
-            <h3 className="font-semibold text-foreground">Current Exchange Rates</h3>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">Current Exchange Rates</h3>
             <p className="text-xs text-muted-foreground">
-              Official recycling rewards & voucher redemption rates set by admin
+              Official recycling rewards & voucher rates
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+        <span className="inline-flex self-start sm:self-auto shrink-0 items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
           Live Rates
         </span>
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-3.5 sm:mt-4 grid gap-3 sm:gap-4 sm:grid-cols-2">
         {/* Deposit Earnings Section */}
-        <div className="space-y-2.5 rounded-lg bg-muted/40 p-3.5">
+        <div className="space-y-2 rounded-lg bg-muted/40 p-3 sm:p-3.5">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Flame className="h-3.5 w-3.5 text-amber-500" />
+            <Flame className="h-3.5 w-3.5 text-amber-500 shrink-0" />
             Recycling Rewards (Per Item)
           </div>
           {activeRewards.length === 0 ? (
             <p className="text-xs text-muted-foreground">No active reward rates set.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {activeRewards.map((rule) => {
                 const label =
                   rule.materialType === "PET_BOTTLE"
@@ -72,13 +72,13 @@ export function ExchangeRatesCard({
                 return (
                   <div
                     key={rule.id}
-                    className="flex items-center justify-between rounded-md bg-background px-3 py-2 text-sm border shadow-2xs"
+                    className="flex items-center justify-between gap-2 rounded-md bg-background px-2.5 sm:px-3 py-2 text-xs sm:text-sm border shadow-2xs min-w-0"
                   >
-                    <span className="flex items-center gap-2 font-medium">
-                      <span>{icon}</span>
-                      <span>{label}</span>
+                    <span className="flex items-center gap-1.5 sm:gap-2 font-medium min-w-0 truncate">
+                      <span className="shrink-0">{icon}</span>
+                      <span className="truncate">{label}</span>
                     </span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400 shrink-0 tabular-nums">
                       +{rule.pointsPerItem} pts
                     </span>
                   </div>
@@ -89,15 +89,15 @@ export function ExchangeRatesCard({
         </div>
 
         {/* Voucher Redemption Rates Section */}
-        <div className="space-y-2.5 rounded-lg bg-muted/40 p-3.5">
+        <div className="space-y-2 rounded-lg bg-muted/40 p-3 sm:p-3.5">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Ticket className="h-3.5 w-3.5 text-sky-500" />
+            <Ticket className="h-3.5 w-3.5 text-sky-500 shrink-0" />
             Wi-Fi Vouchers (Exchange Cost)
           </div>
           {activeVouchers.length === 0 ? (
             <p className="text-xs text-muted-foreground">No active voucher packages.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {activeVouchers.map((rule) => {
                 const hrs = (rule.durationMinutes / 60).toFixed(
                   rule.durationMinutes % 60 === 0 ? 0 : 1
@@ -105,12 +105,12 @@ export function ExchangeRatesCard({
                 return (
                   <div
                     key={rule.id}
-                    className="flex items-center justify-between rounded-md bg-background px-3 py-2 text-sm border shadow-2xs"
+                    className="flex items-center justify-between gap-2 rounded-md bg-background px-2.5 sm:px-3 py-2 text-xs sm:text-sm border shadow-2xs min-w-0"
                   >
-                    <span className="font-medium">
-                      📶 {rule.label || `${hrs} Hour${Number(hrs) > 1 ? "s" : ""} Wi-Fi Access`}
+                    <span className="font-medium min-w-0 truncate">
+                      📶 {rule.label || `${hrs} Hour${Number(hrs) > 1 ? "s" : ""} Wi-Fi`}
                     </span>
-                    <span className="font-bold text-sky-600 dark:text-sky-400">
+                    <span className="font-bold text-sky-600 dark:text-sky-400 shrink-0 tabular-nums">
                       {rule.pointsCost} pts
                     </span>
                   </div>

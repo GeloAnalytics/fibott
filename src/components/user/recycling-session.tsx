@@ -205,7 +205,7 @@ export function RecyclingSession() {
 
   return (
     <Card>
-      <CardContent className="p-6">
+      <CardContent className="p-4 sm:p-6">
         {phase.name === "idle" && (
           <div className="flex flex-col items-start gap-4">
             <div>
@@ -231,11 +231,11 @@ export function RecyclingSession() {
         {phase.name === "active" && (
           <div className="flex flex-col gap-4">
             {/* Header with countdown and kiosk indicator */}
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2.5 min-w-0">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-foreground">Session Active</span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0 ${
                     kioskConnected
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
                       : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 animate-pulse"
@@ -249,7 +249,7 @@ export function RecyclingSession() {
                 </p>
               </div>
               <div
-                className={`flex items-center gap-1.5 text-sm tabular-nums font-mono transition-colors ${
+                className={`flex items-center gap-1.5 text-sm tabular-nums font-mono shrink-0 transition-colors ${
                   isUrgent ? "text-destructive font-semibold" : "text-muted-foreground"
                 }`}
               >
@@ -288,7 +288,7 @@ export function RecyclingSession() {
                   <Camera className="size-4 text-primary animate-pulse" />
                   <span>Kiosk camera active & scanning chute area…</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground mt-1">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-muted-foreground mt-1">
                   <div className={`p-2 rounded border text-center font-medium ${kioskConnected ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400" : "bg-muted"}`}>
                     1. Kiosk Ready
                   </div>
@@ -303,7 +303,7 @@ export function RecyclingSession() {
             )}
 
             {/* End Session button — user voluntarily ends the session */}
-            <div className="pt-2 border-t border-border flex items-center justify-between">
+            <div className="pt-2 border-t border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <p className="text-xs text-muted-foreground">
                 Done depositing? End session to free up kiosk.
               </p>
@@ -312,7 +312,7 @@ export function RecyclingSession() {
                 size="sm"
                 onClick={handleEndSession}
                 disabled={ending}
-                className="gap-2 text-muted-foreground hover:text-foreground"
+                className="w-full sm:w-auto gap-2 text-muted-foreground hover:text-foreground"
               >
                 {ending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -341,12 +341,12 @@ export function RecyclingSession() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={handleStart} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <Button onClick={handleStart} className="w-full sm:w-auto gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
                 <Recycle className="size-4" />
                 Recycle Another Item
               </Button>
-              <Button variant="outline" onClick={() => router.push("/dashboard/wallet")}>
+              <Button variant="outline" onClick={() => router.push("/dashboard/wallet")} className="w-full sm:w-auto">
                 View Wallet & Vouchers →
               </Button>
             </div>
@@ -364,7 +364,7 @@ export function RecyclingSession() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
+            <Button variant="outline" onClick={handleReset} className="w-full sm:w-fit gap-2">
               <Recycle className="size-4" />
               Start New Session
             </Button>
@@ -382,7 +382,7 @@ export function RecyclingSession() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
+            <Button variant="outline" onClick={handleReset} className="w-full sm:w-fit gap-2">
               Try Again
             </Button>
           </div>
@@ -399,7 +399,7 @@ export function RecyclingSession() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleReset} className="w-full gap-2 sm:w-fit">
+            <Button variant="outline" onClick={handleReset} className="w-full sm:w-fit gap-2">
               Try Again
             </Button>
           </div>
@@ -414,7 +414,7 @@ export function RecyclingSession() {
                 <p className="text-sm text-muted-foreground mt-0.5">{phase.message}</p>
               </div>
             </div>
-            <Button variant="outline" onClick={handleReset} className="gap-2 w-fit">
+            <Button variant="outline" onClick={handleReset} className="w-full sm:w-fit gap-2">
               Try Again
             </Button>
           </div>

@@ -394,7 +394,7 @@ export function AdminReportsClient() {
       )}
 
       {/* Top Users */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h2 className="mb-4 font-semibold">Top Users by Points</h2>
         {topUsers.length === 0 ? (
           <p className="text-sm text-muted-foreground">No user data yet.</p>
@@ -430,7 +430,7 @@ export function AdminReportsClient() {
       </div>
 
       {/* Recent Deposits */}
-      <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="rounded-xl border bg-card p-4 sm:p-6 shadow-sm">
         <h2 className="mb-4 font-semibold">Recent Deposits</h2>
         {recentDeposits.length === 0 ? (
           <p className="text-sm text-muted-foreground">No deposits yet.</p>
