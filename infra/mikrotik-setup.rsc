@@ -76,11 +76,12 @@
 # /user/group/set write policy=<existing-list-from-above>,api,rest-api
 # Re-run the step 6 curl test with fibott-api after each change.
 
-# ── 5. Create the 1-hour hotspot profile ─────────────────────────────────────
+# ── 5. Create the hotspot profiles (30min & 1hour) ───────────────────────────
+/ip/hotspot/user/profile/add name=30min session-timeout=30m shared-users=1
 /ip/hotspot/user/profile/add name=1hour session-timeout=1h shared-users=1
 
 # Confirm:
-/ip/hotspot/user/profile/print where name=1hour
+/ip/hotspot/user/profile/print
 
 # ── 6. Quick test — create a dummy hotspot user via REST API ──────────────────
 # Run this from any machine on the same LAN to verify the REST API works:

@@ -4,19 +4,25 @@ import { prisma } from "@/lib/prisma";
 import { HeroStat } from "@/components/shared/hero-stat";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { RecyclingSession } from "@/components/user/recycling-session";
 import { ExchangeRatesCard } from "@/components/user/exchange-rates-card";
+import { VoucherActions } from "@/components/user/voucher-actions";
 import { formatDistanceToNow } from "date-fns";
 
 export default async function DashboardPage() {
   const session = await auth();
   const userId = session!.user.id;
 
-  const [user, itemsSubmitted, activeVouchers, recentActivity, cheapestVoucherRule, rewardRules, voucherRules] =
+  const [user, itemsSubmitted, activeVouchersList, recentActivity, cheapestVoucherRule, rewardRules, voucherRules] =
     await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId } }),
       prisma.deposit.count({ where: { userId, status: "ACCEPTED" } }),
-      prisma.voucher.count({ where: { userId, status: "ISSUED" } }),
+      prisma.voucher.findMany({
+        where: { userId, status: { in: ["ISSUED", "PENDING"] } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
       prisma.pointsTransaction.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
@@ -36,6 +42,8 @@ export default async function DashboardPage() {
       }),
     ]);
 
+  const activeVouchers = activeVouchersList.length;
+
   let qualifier = "Deposit a bottle or can to start earning points.";
   if (cheapestVoucherRule) {
     const remaining = cheapestVoucherRule.pointsCost - user.pointsBalance;
@@ -51,6 +59,36 @@ export default async function DashboardPage() {
 
       {/* Live Exchange Rates */}
       <ExchangeRatesCard rewardRules={rewardRules} voucherRules={voucherRules} />
+
+      {/* Active vouchers — shown prominently if user has any */}
+      {activeVouchersList.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-medium">Your Active Vouchers</h2>
+          {activeVouchersList.map((voucher) => (
+            <div key={voucher.id} className="rounded-lg border bg-card p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="font-mono text-sm font-semibold tracking-wider break-all">
+                  {voucher.code}
+                </p>
+                <Badge variant={voucher.status === "ISSUED" ? "default" : "secondary"}>
+                  {voucher.status}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{voucher.durationMinutes} min WiFi</p>
+              {voucher.status === "ISSUED" && (
+                <div className="pt-1 border-t border-border/50">
+                  <VoucherActions code={voucher.code} variant="compact" />
+                </div>
+              )}
+              {voucher.status === "PENDING" && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  ⏳ Being activated on the router — will be ready shortly.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Primary actions — shown first so they are visible without scrolling on mobile */}
       <div className="space-y-4">

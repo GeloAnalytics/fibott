@@ -5,7 +5,7 @@
 #
 # Requirements:
 #   - Router must have outbound HTTPS internet access
-#   - The 1hour hotspot profile must exist (/ip hotspot user profile print)
+#   - The 30min and 1hour hotspot profiles must exist (/ip hotspot user profile print)
 #   - MIKROTIK_SYNC_KEY in Vercel must match :local syncKey below
 
 /system script add name=fibott-sync policy=read,write,test source="

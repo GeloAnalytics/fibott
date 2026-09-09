@@ -1,8 +1,17 @@
-export default function AuthLayout({
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+
+export default async function AuthLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+  if (session?.user) {
+    if (session.user.role === "ADMIN") redirect("/admin");
+    redirect("/dashboard");
+  }
+
   return (
     <div className="flex flex-1 items-center justify-center bg-secondary/40 px-4 py-12">
       <div className="w-full max-w-sm">
@@ -19,3 +28,4 @@ export default function AuthLayout({
     </div>
   );
 }
+

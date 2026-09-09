@@ -5,6 +5,14 @@ import https from "https";
 export interface CreateHotspotVoucherParams {
   durationMinutes: number;
   label: string;
+  profile?: string;
+}
+
+export function resolveHotspotProfile(durationMinutes: number): string {
+  if (durationMinutes === 30) {
+    return process.env.MIKROTIK_HOTSPOT_PROFILE_30MIN ?? "30min";
+  }
+  return process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour";
 }
 
 export type MikrotikErrorCategory =
@@ -206,6 +214,7 @@ export class MikrotikClient {
     }
 
     try {
+      const profile = params.profile ?? resolveHotspotProfile(params.durationMinutes);
       const response = await requestJson(
         this.config,
         "PUT",
@@ -213,7 +222,7 @@ export class MikrotikClient {
         {
           name: code,
           password: code,
-          profile: this.config.hotspotProfile,
+          profile,
           comment: params.label,
           "limit-uptime": `${params.durationMinutes}m`,
         }

@@ -31,6 +31,7 @@ export function LoginForm() {
   );
   const [submitting, setSubmitting] = useState(false);
   const verified = searchParams.get("verified") === "1";
+  const passwordReset = searchParams.get("reset") === "1";
 
   const {
     register,
@@ -58,6 +59,11 @@ export function LoginForm() {
         {verified && (
           <p className="rounded-md bg-success px-3 py-2 text-sm text-success-foreground">
             Email verified. You can now sign in.
+          </p>
+        )}
+        {passwordReset && (
+          <p className="rounded-md bg-success px-3 py-2 text-sm text-success-foreground">
+            Password reset successfully. Please sign in with your new password.
           </p>
         )}
         {serverError && (

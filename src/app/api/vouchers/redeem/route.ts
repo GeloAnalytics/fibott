@@ -3,7 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { spendPoints, refundPoints, InsufficientPointsError } from "@/lib/points";
-import { getMikrotikClient, generateVoucherCode } from "@/lib/mikrotik-client";
+import { getMikrotikClient, generateVoucherCode, resolveHotspotProfile } from "@/lib/mikrotik-client";
 import { logSystemEvent } from "@/lib/logger";
 
 const schema = z.object({ voucherRuleId: z.string() });
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
   }
 
   const userId = session.user.id;
+  const profile = resolveHotspotProfile(voucherRule.durationMinutes);
 
   let voucherId: string;
   try {
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
           pointsCost: voucherRule.pointsCost,
           durationMinutes: voucherRule.durationMinutes,
           status: "PENDING",
+          mikrotikProfile: profile,
         },
       });
 
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
   const result = await mikrotik.createHotspotVoucher({
     durationMinutes: voucherRule.durationMinutes,
     label: voucherId,
+    profile,
   });
 
   if (result.success && result.code) {
@@ -69,6 +72,7 @@ export async function POST(req: Request) {
       data: {
         status: "ISSUED",
         code: result.code,
+        mikrotikProfile: profile,
         mikrotikVoucherRef: result.voucherRef,
         issuedAt: new Date(),
         expiresAt: result.expiresAt,
@@ -80,7 +84,7 @@ export async function POST(req: Request) {
       level: "INFO",
       tag: "MIKROTIK",
       message: `Voucher issued successfully via direct REST (${result.code})`,
-      details: { voucherId: voucher.id, userId, durationMinutes: voucherRule.durationMinutes },
+      details: { voucherId: voucher.id, userId, durationMinutes: voucherRule.durationMinutes, profile },
     });
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -107,7 +111,6 @@ export async function POST(req: Request) {
 
   if (isNetworkFailure) {
     const code = generateVoucherCode();
-    const profile = process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour";
 
     const voucher = await prisma.voucher.update({
       where: { id: voucherId },

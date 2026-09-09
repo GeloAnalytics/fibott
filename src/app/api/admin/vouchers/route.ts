@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMikrotikClient, generateVoucherCode } from "@/lib/mikrotik-client";
+import { getMikrotikClient, generateVoucherCode, resolveHotspotProfile } from "@/lib/mikrotik-client";
 import { logSystemEvent } from "@/lib/logger";
 
 const schema = z.object({
@@ -43,6 +43,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const profile = resolveHotspotProfile(voucherRule.durationMinutes);
+
   const voucher = await prisma.voucher.create({
     data: {
       userId,
@@ -51,6 +53,7 @@ export async function POST(req: Request) {
       pointsCost: 0,
       durationMinutes: voucherRule.durationMinutes,
       status: "PENDING",
+      mikrotikProfile: profile,
     },
   });
 
@@ -58,6 +61,7 @@ export async function POST(req: Request) {
   const result = await mikrotik.createHotspotVoucher({
     durationMinutes: voucherRule.durationMinutes,
     label: voucher.id,
+    profile,
   });
 
   if (result.success && result.code) {
@@ -66,6 +70,7 @@ export async function POST(req: Request) {
       data: {
         status: "ISSUED",
         code: result.code,
+        mikrotikProfile: profile,
         mikrotikVoucherRef: result.voucherRef,
         issuedAt: new Date(),
         expiresAt: result.expiresAt,
@@ -78,7 +83,7 @@ export async function POST(req: Request) {
         level: "INFO",
         tag: "MIKROTIK",
         message: `Voucher admin-granted and issued via direct REST (${result.code})`,
-        details: { voucherId: issued.id, grantedToUserId: userId, adminId: session.user.id },
+        details: { voucherId: issued.id, grantedToUserId: userId, adminId: session.user.id, profile },
       }),
       prisma.auditLog.create({
         data: {
@@ -118,7 +123,6 @@ export async function POST(req: Request) {
 
   if (isNetworkFailure) {
     const code = generateVoucherCode();
-    const profile = process.env.MIKROTIK_HOTSPOT_PROFILE ?? "1hour";
 
     const queued = await prisma.voucher.update({
       where: { id: voucher.id },
