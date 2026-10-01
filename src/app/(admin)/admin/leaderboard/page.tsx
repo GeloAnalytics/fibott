@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getLeaderboardData, LeaderboardTimeframe } from "@/lib/leaderboard";
+import { prisma } from "@/lib/prisma";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaderboardTabs } from "@/components/shared/leaderboard-tabs";
+import { AdminLeaderboardRewardsManager } from "@/components/admin/admin-leaderboard-rewards-manager";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -57,6 +59,11 @@ function getInitials(name?: string | null, email?: string | null) {
   return "U";
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
 export default async function AdminLeaderboardPage({
   searchParams,
 }: {
@@ -68,7 +75,23 @@ export default async function AdminLeaderboardPage({
       ? resolvedParams.timeframe
       : "all";
 
-  const leaderboard = await getLeaderboardData(timeframe);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthNum = now.getMonth() + 1;
+  const currentMonthKey = `${currentYear}-${String(currentMonthNum).padStart(2, "0")}`;
+  const currentMonthName = MONTH_NAMES[now.getMonth()];
+
+  const [leaderboard, settingsData, pastAwards] = await Promise.all([
+    getLeaderboardData(timeframe),
+    prisma.leaderboardRewardSetting.findUnique({ where: { id: "default" } }),
+    prisma.monthlyLeaderboardAward.findMany({ orderBy: { awardedAt: "desc" }, take: 20 }),
+  ]);
+
+  const settings = settingsData ?? {
+    rank1Points: 500,
+    rank2Points: 300,
+    rank3Points: 100,
+  };
 
   const topRecycler = leaderboard[0];
   const totalRecycledInTimeframe = leaderboard.reduce(
@@ -86,11 +109,20 @@ export default async function AdminLeaderboardPage({
         <div>
           <h1 className="text-2xl font-semibold">Leaderboard Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor top recyclers and recycling activity across timeframes.
+            Monitor top recyclers, configure monthly rewards, and distribute free points to Top 3 winners.
           </p>
         </div>
         <LeaderboardTabs current={timeframe} baseUrl="/admin/leaderboard" />
       </div>
+
+      {/* Admin Monthly Leaderboard Rewards Management Component */}
+      <AdminLeaderboardRewardsManager
+        initialSettings={settings}
+        initialAwards={pastAwards as any}
+        currentMonthKey={currentMonthKey}
+        currentMonthName={currentMonthName}
+        currentYear={currentYear}
+      />
 
       <div className="grid gap-4 sm:grid-cols-4">
         <StatCard label="Active recyclers" value={leaderboard.length} />

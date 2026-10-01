@@ -351,3 +351,24 @@ model SystemLog {
   @@index([createdAt])
 }
 
+model LeaderboardRewardSetting {
+  id          String   @id @default("default")
+  rank1Points Int      @default(500)
+  rank2Points Int      @default(300)
+  rank3Points Int      @default(100)
+  updatedAt   DateTime @updatedAt
+}
+
+model MonthlyLeaderboardAward {
+  id        String   @id @default(cuid())
+  monthKey  String   @unique
+  year      Int
+  month     Int
+  awardedAt DateTime @default(now())
+  awardedBy String
+  details   Json
+
+  @@index([monthKey])
+}
+
+

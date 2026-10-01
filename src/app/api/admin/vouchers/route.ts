@@ -78,6 +78,25 @@ export async function POST(req: Request) {
     });
 
     await Promise.all([
+      prisma.pointsTransaction.create({
+        data: {
+          userId,
+          type: "ADJUSTMENT",
+          source: "ADMIN_ADJUSTMENT",
+          amount: 0,
+          balanceAfter: targetUser.pointsBalance,
+          voucherId: issued.id,
+          note: `Free ${voucherRule.durationMinutes}-min WiFi Voucher granted by Admin (${result.code})`,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId,
+          title: "Free WiFi Voucher Granted!",
+          message: `Admin granted you a free ${voucherRule.durationMinutes}-minute WiFi voucher code: ${result.code}.`,
+          type: "VOUCHER_ISSUED",
+        },
+      }),
       logSystemEvent({
         source: "SYSTEM",
         level: "INFO",
@@ -134,6 +153,25 @@ export async function POST(req: Request) {
     });
 
     await Promise.all([
+      prisma.pointsTransaction.create({
+        data: {
+          userId,
+          type: "ADJUSTMENT",
+          source: "ADMIN_ADJUSTMENT",
+          amount: 0,
+          balanceAfter: targetUser.pointsBalance,
+          voucherId: queued.id,
+          note: `Free ${voucherRule.durationMinutes}-min WiFi Voucher granted by Admin (${code})`,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId,
+          title: "Free WiFi Voucher Granted!",
+          message: `Admin granted you a free ${voucherRule.durationMinutes}-minute WiFi voucher code: ${code}.`,
+          type: "VOUCHER_ISSUED",
+        },
+      }),
       logSystemEvent({
         source: "SYSTEM",
         level: "INFO",

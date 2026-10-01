@@ -14,15 +14,28 @@ export interface LeaderboardEntry {
   lastRecycledAt: Date | null;
 }
 
+export interface GetLeaderboardOptions {
+  year?: number;
+  month?: number; // 1-12
+}
+
 export async function getLeaderboardData(
-  timeframe: LeaderboardTimeframe = "all"
+  timeframe: LeaderboardTimeframe = "all",
+  options?: GetLeaderboardOptions
 ): Promise<LeaderboardEntry[]> {
   let startDate: Date | undefined;
+  let endDate: Date | undefined;
   const now = new Date();
-  if (timeframe === "week") {
+
+  if (options?.year && options?.month) {
+    // 1-indexed month (1 = Jan, 12 = Dec)
+    startDate = new Date(options.year, options.month - 1, 1, 0, 0, 0, 0);
+    endDate = new Date(options.year, options.month, 0, 23, 59, 59, 999);
+  } else if (timeframe === "week") {
     startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   } else if (timeframe === "month") {
-    startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Start of current calendar month
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   }
 
   const depositsGrouped = await prisma.deposit.groupBy({
@@ -30,7 +43,14 @@ export async function getLeaderboardData(
     where: {
       status: "ACCEPTED",
       userId: { not: null },
-      ...(startDate ? { createdAt: { gte: startDate } } : {}),
+      ...(startDate || endDate
+        ? {
+            createdAt: {
+              ...(startDate ? { gte: startDate } : {}),
+              ...(endDate ? { lte: endDate } : {}),
+            },
+          }
+        : {}),
     },
     _sum: {
       quantity: true,

@@ -1,11 +1,13 @@
 import { auth } from "@/lib/auth";
 import { getLeaderboardData, LeaderboardTimeframe } from "@/lib/leaderboard";
+import { prisma } from "@/lib/prisma";
 import { HeroStat } from "@/components/shared/hero-stat";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaderboardTabs } from "@/components/shared/leaderboard-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Trophy, Gift, Sparkles } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -71,7 +73,16 @@ export default async function LeaderboardPage({
       ? resolvedParams.timeframe
       : "all";
 
-  const leaderboard = await getLeaderboardData(timeframe);
+  const [leaderboard, settingsData] = await Promise.all([
+    getLeaderboardData(timeframe),
+    prisma.leaderboardRewardSetting.findUnique({ where: { id: "default" } }),
+  ]);
+
+  const settings = settingsData ?? {
+    rank1Points: 500,
+    rank2Points: 300,
+    rank3Points: 100,
+  };
 
   const myEntry = leaderboard.find((entry) => entry.userId === currentUserId);
   const totalRecycledInTimeframe = leaderboard.reduce(
@@ -96,6 +107,45 @@ export default async function LeaderboardPage({
           </p>
         </div>
         <LeaderboardTabs current={timeframe} baseUrl="/dashboard/leaderboard" />
+      </div>
+
+      {/* Monthly Rewards Announcement Banner */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-emerald-500/10 p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-amber-500/20 p-2.5 text-amber-600 dark:text-amber-400 shrink-0">
+              <Trophy className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-foreground">Monthly Top 3 Recycler Rewards</h2>
+                <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-xs">
+                  <Sparkles className="size-3 mr-1" /> Free Bonus Points
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Recycle bottles & cans to climb the monthly leaderboard! The top 3 recyclers each month earn free reward points set by Admin.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 bg-background/80 backdrop-blur-xs rounded-xl p-2.5 border shrink-0 justify-around sm:justify-start">
+            <div className="text-center px-2">
+              <span className="text-xs block text-amber-600 dark:text-amber-400 font-bold">🥇 1st</span>
+              <span className="font-mono text-sm font-extrabold text-foreground">+{settings.rank1Points} pts</span>
+            </div>
+            <div className="h-6 w-px bg-border" />
+            <div className="text-center px-2">
+              <span className="text-xs block text-slate-500 dark:text-slate-400 font-bold">🥈 2nd</span>
+              <span className="font-mono text-sm font-extrabold text-foreground">+{settings.rank2Points} pts</span>
+            </div>
+            <div className="h-6 w-px bg-border" />
+            <div className="text-center px-2">
+              <span className="text-xs block text-amber-700 dark:text-amber-500 font-bold">🥉 3rd</span>
+              <span className="font-mono text-sm font-extrabold text-foreground">+{settings.rank3Points} pts</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <HeroStat
@@ -160,6 +210,11 @@ export default async function LeaderboardPage({
                               {isCurrentUser && (
                                 <Badge variant="default" className="text-[10px] px-1.5 py-0 h-4">
                                   You
+                                </Badge>
+                              )}
+                              {entry.rank <= 3 && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+                                  Top {entry.rank} Winner Candidate
                                 </Badge>
                               )}
                             </div>
