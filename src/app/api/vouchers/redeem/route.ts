@@ -79,6 +79,15 @@ export async function POST(req: Request) {
       },
     });
 
+    await prisma.notification.create({
+      data: {
+        userId,
+        title: "Voucher Redeemed",
+        message: `Your WiFi voucher (${result.code}) for ${voucherRule.durationMinutes} minutes has been successfully generated.`,
+        type: "VOUCHER_ISSUED",
+      },
+    });
+
     await logSystemEvent({
       source: "SYSTEM",
       level: "INFO",
@@ -118,6 +127,15 @@ export async function POST(req: Request) {
         code,
         status: "PENDING",
         mikrotikProfile: profile,
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId,
+        title: "Voucher Redeemed",
+        message: `Your WiFi voucher (${code}) for ${voucherRule.durationMinutes} minutes has been generated and queued for HotSpot activation.`,
+        type: "VOUCHER_ISSUED",
       },
     });
 

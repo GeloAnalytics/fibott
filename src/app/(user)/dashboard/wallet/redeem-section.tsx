@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
 import { VoucherActions } from "@/components/user/voucher-actions";
 
 interface VoucherRuleOption {
@@ -26,6 +25,13 @@ export function RedeemSection({
   const router = useRouter();
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [redeemedCode, setRedeemedCode] = useState<string | null>(null);
+  const voucherCodeRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (redeemedCode && voucherCodeRef.current) {
+      voucherCodeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [redeemedCode]);
 
   async function handleRedeem(ruleId: string) {
     setRedeemingId(ruleId);
@@ -51,6 +57,9 @@ export function RedeemSection({
     }
 
     setRedeemedCode(data.code);
+    toast.success(`Voucher redeemed successfully! Your code is: ${data.code}`, {
+      duration: 6000,
+    });
     router.refresh();
   }
 
@@ -59,10 +68,14 @@ export function RedeemSection({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h2 className="text-lg font-medium">Redeem for WiFi</h2>
 
-      {redeemedCode && <VoucherActions code={redeemedCode} />}
+      {redeemedCode && (
+        <div ref={voucherCodeRef} className="scroll-mt-6">
+          <VoucherActions code={redeemedCode} />
+        </div>
+      )}
 
       <div className="space-y-2.5">
         {rules.map((rule) => {
