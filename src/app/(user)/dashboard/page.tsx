@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { RecyclingSession } from "@/components/user/recycling-session";
 import { ExchangeRatesCard } from "@/components/user/exchange-rates-card";
 import { VoucherActions } from "@/components/user/voucher-actions";
+import { Gift } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export default async function DashboardPage() {
@@ -62,29 +63,50 @@ export default async function DashboardPage() {
       {activeVouchersList.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-base sm:text-lg font-medium">Your Active Vouchers</h2>
-          {activeVouchersList.map((voucher) => (
-            <div key={voucher.id} className="rounded-lg border bg-card p-3.5 sm:p-4 space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <p className="font-mono text-sm font-semibold tracking-wider break-all">
-                  {voucher.code}
-                </p>
-                <Badge variant={voucher.status === "ISSUED" ? "default" : "secondary"}>
-                  {voucher.status}
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">{voucher.durationMinutes} min WiFi</p>
-              {voucher.status === "ISSUED" && (
-                <div className="pt-1 border-t border-border/50">
-                  <VoucherActions code={voucher.code} variant="compact" />
+          {activeVouchersList.map((voucher) => {
+            const isAdminGrant = voucher.pointsCost === 0;
+            return (
+              <div
+                key={voucher.id}
+                className={`rounded-xl border bg-card p-3.5 sm:p-4 space-y-2 ${
+                  isAdminGrant ? "border-amber-500/30 bg-amber-500/5" : ""
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    {isAdminGrant && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                        <Gift className="size-3 shrink-0" />
+                        Free Admin Grant
+                      </span>
+                    )}
+                    <p className="font-mono text-sm font-semibold tracking-wider break-all">
+                      {voucher.code}
+                    </p>
+                  </div>
+                  <Badge variant={voucher.status === "ISSUED" ? "default" : "secondary"}>
+                    {voucher.status}
+                  </Badge>
                 </div>
-              )}
-              {voucher.status === "PENDING" && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  ⏳ Being activated on the router — will be ready shortly.
+                <p className="text-xs text-muted-foreground">
+                  {voucher.durationMinutes} min WiFi
+                  {isAdminGrant && (
+                    <span className="ml-2 text-amber-600 dark:text-amber-400 font-medium">· 🎁 Complimentary</span>
+                  )}
                 </p>
-              )}
-            </div>
-          ))}
+                {voucher.status === "ISSUED" && (
+                  <div className="pt-1 border-t border-border/50">
+                    <VoucherActions code={voucher.code} variant="compact" />
+                  </div>
+                )}
+                {voucher.status === "PENDING" && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⏳ Being activated on the router — will be ready shortly.
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

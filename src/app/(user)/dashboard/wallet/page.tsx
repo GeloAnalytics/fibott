@@ -14,6 +14,7 @@ import {
 import { formatPHT } from "@/lib/date-utils";
 import { RedeemSection } from "./redeem-section";
 import { VoucherActions } from "@/components/user/voucher-actions";
+import { Gift } from "lucide-react";
 
 const VOUCHER_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   ISSUED: "default",
@@ -51,7 +52,7 @@ export default async function WalletPage() {
     .filter(
       (t) =>
         t.type === "EARN" ||
-        (t.type === "ADJUSTMENT" && t.source === "ADMIN_ADJUSTMENT")
+        (t.type === "ADJUSTMENT" && t.source === "ADMIN_ADJUSTMENT" && t.amount > 0)
     )
     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -69,6 +70,11 @@ export default async function WalletPage() {
       .reduce((sum, t) => sum + t.amount, 0) - refunded
   );
 
+  // Count free admin-granted vouchers among the user's active ones
+  const freeVouchersCount = vouchers.filter(
+    (v) => v.pointsCost === 0 && (v.status === "ISSUED" || v.status === "PENDING")
+  ).length;
+
   return (
     <div className="space-y-5">
       <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Points Wallet</h1>
@@ -77,10 +83,18 @@ export default async function WalletPage() {
       <div className="rounded-2xl border bg-gradient-to-br from-card to-secondary/30 p-4 sm:p-6 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Balance</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Active
-          </span>
+          <div className="flex items-center gap-2">
+            {freeVouchersCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                <Gift className="size-3" />
+                {freeVouchersCount} Free Voucher{freeVouchersCount > 1 ? "s" : ""}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Active
+            </span>
+          </div>
         </div>
         <div className="flex items-baseline gap-1.5">
           <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary tabular-nums">
@@ -103,45 +117,66 @@ export default async function WalletPage() {
       <RedeemSection rules={voucherRules} pointsBalance={user.pointsBalance} />
 
       <div>
-        <h2 className="mb-3 text-base sm:text-lg font-medium">My vouchers</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base sm:text-lg font-medium">My Vouchers</h2>
+          {vouchers.length > 0 && (
+            <span className="text-xs text-muted-foreground">{vouchers.length} total</span>
+          )}
+        </div>
         {vouchers.length === 0 ? (
           <EmptyState
             title="No vouchers yet"
-            description="Redeem points above to get your first WiFi voucher."
+            description="Redeem points above to get your first WiFi voucher, or ask an admin to grant you one."
           />
         ) : (
           <div className="space-y-3">
-            {vouchers.map((voucher) => (
-              <div
-                key={voucher.id}
-                className="rounded-lg border bg-card p-3.5 sm:p-4 space-y-2.5"
-              >
-                {/* Top row: code + status */}
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <p className="font-mono text-sm font-semibold tracking-wider break-all">
-                    {voucher.code}
-                  </p>
-                  <Badge variant={VOUCHER_STATUS_VARIANT[voucher.status] ?? "secondary"}>
-                    {voucher.status}
-                  </Badge>
-                </div>
+            {vouchers.map((voucher) => {
+              const isAdminGrant = voucher.pointsCost === 0;
+              return (
+                <div
+                  key={voucher.id}
+                  className={`rounded-xl border bg-card p-3.5 sm:p-4 space-y-2.5 transition-colors ${
+                    isAdminGrant ? "border-amber-500/30 bg-amber-500/5" : ""
+                  }`}
+                >
+                  {/* Top row: admin gift label + code + status */}
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      {isAdminGrant && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                          <Gift className="size-3 shrink-0" />
+                          Free Admin Grant
+                        </span>
+                      )}
+                      <p className="font-mono text-sm font-semibold tracking-wider break-all">
+                        {voucher.code}
+                      </p>
+                    </div>
+                    <Badge variant={VOUCHER_STATUS_VARIANT[voucher.status] ?? "secondary"}>
+                      {voucher.status}
+                    </Badge>
+                  </div>
 
-                {/* Meta row: duration + issued date */}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                  <span>{voucher.durationMinutes} min</span>
-                  {voucher.issuedAt && (
-                    <span>Issued {formatPHT(voucher.issuedAt)}</span>
+                  {/* Meta row: duration + issued date */}
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                    <span>{voucher.durationMinutes} min WiFi</span>
+                    {isAdminGrant && (
+                      <span className="text-amber-600 dark:text-amber-400 font-medium">🎁 Complimentary</span>
+                    )}
+                    {voucher.issuedAt && (
+                      <span>Issued {formatPHT(voucher.issuedAt)}</span>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  {voucher.status !== "FAILED" && voucher.status !== "EXPIRED" && (
+                    <div className="pt-1 border-t border-border/50">
+                      <VoucherActions code={voucher.code} variant="compact" />
+                    </div>
                   )}
                 </div>
-
-                {/* Actions */}
-                {voucher.status !== "FAILED" && voucher.status !== "EXPIRED" && (
-                  <div className="pt-1 border-t border-border/50">
-                    <VoucherActions code={voucher.code} variant="compact" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -157,28 +192,50 @@ export default async function WalletPage() {
                 <TableRow>
                   <TableHead className="text-xs">Date</TableHead>
                   <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs">Source</TableHead>
+                  <TableHead className="text-xs">Note</TableHead>
                   <TableHead className="text-xs">Amount</TableHead>
                   <TableHead className="text-xs">Balance after</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell className="text-xs whitespace-nowrap">{formatPHT(tx.createdAt)}</TableCell>
-                    <TableCell>
-                      <Badge variant={tx.type === "EARN" ? "default" : "secondary"} className="text-[11px] px-1.5 py-0.5">
-                        {tx.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">{tx.source.replace(/_/g, " ")}</TableCell>
-                    <TableCell className="tabular-nums text-xs font-semibold">
-                      {tx.type === "SPEND" ? "-" : "+"}
-                      {tx.amount}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">{tx.balanceAfter}</TableCell>
-                  </TableRow>
-                ))}
+                {transactions.map((tx) => {
+                  const isFreeVoucher =
+                    tx.type === "ADJUSTMENT" &&
+                    tx.source === "ADMIN_ADJUSTMENT" &&
+                    tx.amount === 0 &&
+                    tx.note?.includes("Free");
+
+                  return (
+                    <TableRow key={tx.id}>
+                      <TableCell className="text-xs whitespace-nowrap">{formatPHT(tx.createdAt)}</TableCell>
+                      <TableCell>
+                        {isFreeVoucher ? (
+                          <Badge variant="outline" className="text-[11px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 gap-1">
+                            <Gift className="size-3" /> Free Voucher
+                          </Badge>
+                        ) : (
+                          <Badge variant={tx.type === "EARN" ? "default" : "secondary"} className="text-[11px] px-1.5 py-0.5">
+                            {tx.type}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">
+                        {tx.note ?? tx.source.replace(/_/g, " ")}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-xs font-semibold">
+                        {isFreeVoucher ? (
+                          <span className="text-amber-600 dark:text-amber-400">🎁 Gift</span>
+                        ) : (
+                          <>
+                            {tx.type === "SPEND" ? "-" : "+"}
+                            {tx.amount}
+                          </>
+                        )}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-xs">{tx.balanceAfter}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
