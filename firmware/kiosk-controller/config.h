@@ -1,38 +1,36 @@
 #pragma once
 
-// ── WiFi ─────────────────────────────────────────────────────────────────────
-#define WIFI_SSID     "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+// ═══════════════════════════════════════════════════════════════════════════════
+// Fibott Kiosk Controller (2nd ESP32: Servo Gate & Buzzer Actuator)
+// config.h
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Backend ───────────────────────────────────────────────────────────────────
-#define BACKEND_HOST   "your-app.vercel.app"   // no https:// prefix
-#define BACKEND_PORT   443
-#define DEVICE_API_KEY "your-controller-api-key-here"
+// ── Firmware Version ──────────────────────────────────────────────────────────
+#define FIRMWARE_VERSION "2.0.0-actuator-controller"
 
-// ── UART to ESP32-CAM ─────────────────────────────────────────────────────────
-// Wire: Controller GPIO17 (TX) → ESP32-CAM GPIO14 (RX)
-//       Controller GPIO16 (RX) → ESP32-CAM GPIO15 (TX)
-//       Common GND
+// ── UART Connection to ESP32-CAM ──────────────────────────────────────────────
+// Connect:
+//   ESP32-CAM GPIO13 (TX)  →  Controller GPIO16 (RX2)
+//   ESP32-CAM GPIO14 (RX)  ←  Controller GPIO17 (TX2)
+//   ESP32-CAM GND          ──  Controller GND (Mandatory Common Ground!)
 #define CAM_UART_BAUD 115200
 #define CAM_UART_RX   16
 #define CAM_UART_TX   17
-// Timeout waiting for camera UART response (ms)
-#define CAM_UART_TIMEOUT_MS 15000
 
-// ── Buttons (active-LOW, internal pull-up) ────────────────────────────────────
-#define BTN_START   2   // Blue  — START DEPOSIT
-#define BTN_CONFIRM 4   // White — CONFIRM / NEXT (reserved for future use)
-#define BTN_CANCEL  5   // Red   — CANCEL current transaction
-#define BTN_ADMIN   18  // Blue  — ADMIN / MAINTENANCE
+// ── Servo Gate Actuator Configuration ─────────────────────────────────────────
+// Connect SG90 / MG90S signal wire to GPIO18
+// External 5V supply connected to Servo 5V and GND.
+#define PIN_SERVO       18
+#define SERVO_CLOSED_US 1500   // Rest/Closed pulse width (~90°) — adjust for chute
+#define SERVO_OPEN_US   2000   // Open pulse width (~135°) — adjust for chute
+#define GATE_OPEN_MS    3000   // How long gate stays open for deposit (milliseconds)
 
-// ── Buzzer ────────────────────────────────────────────────────────────────────
-#define PIN_BUZZER  19  // Active buzzer, HIGH = on
+// ── Buzzer Configuration ──────────────────────────────────────────────────────
+// Connect buzzer (+) lead to GPIO19, (-) lead to GND
+#define PIN_BUZZER          19
+#define BUZZER_TYPE_ACTIVE  1
+#define BUZZER_TYPE_PASSIVE 2
+#define BUZZER_MODE         BUZZER_TYPE_ACTIVE  // Set to PASSIVE if using passive piezo
 
-// ── Timing ────────────────────────────────────────────────────────────────────
-// How long the gate stays open after ACCEPT (controller-side delay before SERVO CLOSE).
-// Must be longer than the ESP32-CAM's servo open time.
-#define GATE_OPEN_MS 3500
-
-// How long to wait for the camera to respond before declaring an error.
-// Keep well above the worst-case classify + POST round-trip time (~10 s).
-#define RESULT_TIMEOUT_MS 20000
+// ── Status LED Configuration ──────────────────────────────────────────────────
+#define PIN_LED_STATUS 2  // Onboard blue LED on ESP32 DevKit (active-HIGH)

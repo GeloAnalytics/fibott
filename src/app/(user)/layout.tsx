@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { UserSidebar } from "@/components/user/user-sidebar";
 import { SignOutButton } from "@/components/shared/sign-out-button";
 import { MobileNav } from "@/components/shared/mobile-nav";
+import { NotificationBell } from "@/components/user/notification-bell";
 
 export default async function UserLayout({
   children,
@@ -29,10 +30,13 @@ export default async function UserLayout({
             </MobileNav>
             <span className="text-lg font-semibold sm:hidden">Fibott</span>
           </div>
-          <span className="hidden truncate text-sm text-muted-foreground sm:block">
-            Signed in as {session.user.name ?? session.user.email}
-          </span>
-          <SignOutButton />
+          <div className="flex items-center gap-3">
+            <span className="hidden truncate text-sm text-muted-foreground sm:block">
+              Signed in as {session.user.name ?? session.user.email}
+            </span>
+            <NotificationBell />
+            <SignOutButton />
+          </div>
         </header>
         <main className="flex-1 min-w-0 w-full p-4 sm:p-6">{children}</main>
       </div>

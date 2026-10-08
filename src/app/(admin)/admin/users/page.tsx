@@ -14,6 +14,7 @@ import {
 
 import { AdminResetPasswordDialog } from "@/components/admin/admin-reset-password-dialog";
 import { AdminGrantVoucherDialog } from "@/components/admin/admin-grant-voucher-dialog";
+import { AdminGrantPointsDialog } from "@/components/admin/admin-grant-points-dialog";
 
 const PAGE_SIZE = 100;
 
@@ -93,6 +94,7 @@ export default async function AdminUsersPage({
                     <TableCell className="tabular-nums">{user.pointsBalance}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <AdminGrantPointsDialog user={user} />
                         <AdminGrantVoucherDialog user={user} voucherRules={voucherRules} />
                         <AdminResetPasswordDialog user={user} />
                       </div>

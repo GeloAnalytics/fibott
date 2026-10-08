@@ -6,40 +6,52 @@ import { Badge } from "@/components/ui/badge";
 import { RecyclingSession } from "@/components/user/recycling-session";
 import { ExchangeRatesCard } from "@/components/user/exchange-rates-card";
 import { VoucherActions } from "@/components/user/voucher-actions";
-import { Gift } from "lucide-react";
+import { Gift, Trophy, Bell, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export default async function DashboardPage() {
   const session = await auth();
   const userId = session!.user.id;
 
-  const [user, itemsSubmitted, activeVouchersList, recentActivity, cheapestVoucherRule, rewardRules, voucherRules] =
-    await Promise.all([
-      prisma.user.findUniqueOrThrow({ where: { id: userId } }),
-      prisma.deposit.count({ where: { userId, status: "ACCEPTED" } }),
-      prisma.voucher.findMany({
-        where: { userId, status: { in: ["ISSUED", "PENDING"] } },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      }),
-      prisma.pointsTransaction.findMany({
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      }),
-      prisma.voucherRule.findFirst({
-        where: { isActive: true },
-        orderBy: { pointsCost: "asc" },
-      }),
-      prisma.rewardRule.findMany({
-        where: { isActive: true },
-        orderBy: { materialType: "asc" },
-      }),
-      prisma.voucherRule.findMany({
-        where: { isActive: true },
-        orderBy: { pointsCost: "asc" },
-      }),
-    ]);
+  const [
+    user,
+    itemsSubmitted,
+    activeVouchersList,
+    recentActivity,
+    cheapestVoucherRule,
+    rewardRules,
+    voucherRules,
+    latestUnreadNotif,
+  ] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+    prisma.deposit.count({ where: { userId, status: "ACCEPTED" } }),
+    prisma.voucher.findMany({
+      where: { userId, status: { in: ["ISSUED", "PENDING"] } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.pointsTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.voucherRule.findFirst({
+      where: { isActive: true },
+      orderBy: { pointsCost: "asc" },
+    }),
+    prisma.rewardRule.findMany({
+      where: { isActive: true },
+      orderBy: { materialType: "asc" },
+    }),
+    prisma.voucherRule.findMany({
+      where: { isActive: true },
+      orderBy: { pointsCost: "asc" },
+    }),
+    prisma.notification.findFirst({
+      where: { userId, isRead: false },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   const activeVouchers = activeVouchersList.length;
 
@@ -55,6 +67,41 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl sm:text-2xl font-semibold">Dashboard</h1>
+
+      {/* Unread Reward/Notification Banner */}
+      {latestUnreadNotif && (
+        <div className="rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-3.5 sm:p-4 flex items-start justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              {latestUnreadNotif.title.toLowerCase().includes("leaderboard") ||
+              latestUnreadNotif.title.includes("🏆") ? (
+                <Trophy className="size-4.5" />
+              ) : (
+                <Sparkles className="size-4.5" />
+              )}
+            </div>
+            <div className="space-y-0.5 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs sm:text-sm font-bold text-foreground">
+                  {latestUnreadNotif.title}
+                </p>
+                <span className="text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                  Auto-credited to wallet
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground line-clamp-2">
+                {latestUnreadNotif.message}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard/notifications"
+            className="shrink-0 text-xs font-semibold text-primary hover:underline whitespace-nowrap pt-1"
+          >
+            View Inbox →
+          </Link>
+        </div>
+      )}
 
       {/* Live Exchange Rates */}
       <ExchangeRatesCard rewardRules={rewardRules} voucherRules={voucherRules} />

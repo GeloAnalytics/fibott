@@ -115,8 +115,8 @@ export async function POST(req: Request) {
       await tx.notification.create({
         data: {
           userId: winner.userId,
-          title: `🏆 Leaderboard Reward: Rank #${winner.rank}!`,
-          message: `Congratulations! You achieved Rank #${winner.rank} in the ${monthName} ${year} monthly recycling leaderboard and received ${pointsToAward} free points!`,
+          title: `🏆 Monthly Leaderboard Reward: Rank #${winner.rank}!`,
+          message: `Congratulations! You placed Rank #${winner.rank} in the ${monthName} ${year} recycling leaderboard! You received +${pointsToAward} free points, which have been automatically added to your Points Wallet. (No claim required).`,
           type: "SYSTEM",
         },
       });

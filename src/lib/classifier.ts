@@ -33,20 +33,10 @@ async function getSharp() {
 }
 
 /**
- * Confidence floor below which we don't trust the top prediction at all —
- * MobileNet's top-1 probability on out-of-distribution images (a kiosk
- * chute, not a clean product photo) is often low even when the label is
- * directionally right.
+ * Confidence floor below which we don't trust the top prediction at all.
  */
-const MIN_CONFIDENCE = 0.15;
+const MIN_CONFIDENCE = 0.20;
 
-/**
- * ImageNet-1k has no dedicated beverage-can class. "milk can" (a large
- * lidded steel can) is the closest visual proxy available zero-shot — this
- * is a bootstrap, not a reliable can detector. See docs/ml.md for why, and
- * for the fine-tuning path that replaces this mapping with a real
- * two-class head trained on your own kiosk images.
- */
 const LABEL_KEYWORDS: Record<"PET_BOTTLE" | "ALUMINUM_CAN", string[]> = {
   PET_BOTTLE: [
     "bottle",
@@ -55,24 +45,57 @@ const LABEL_KEYWORDS: Record<"PET_BOTTLE" | "ALUMINUM_CAN", string[]> = {
     "soda bottle",
     "beer bottle",
     "wine bottle",
+    "plastic bottle",
     "pill bottle",
-    "flask",
-    "plastic",
   ],
   ALUMINUM_CAN: [
-    "can",
-    "tin can",
     "beer can",
     "soda can",
+    "tin can",
     "milk can",
     "beverage can",
-    "container",
-    "aluminum",
-    "metal",
-    "cylinder",
-    "barrel",
+    "aluminum can",
+    "can",
   ],
 };
+
+const NON_RECYCLABLE_KEYWORDS = [
+  "paper",
+  "tissue",
+  "envelope",
+  "towel",
+  "carton",
+  "cardboard",
+  "hand",
+  "finger",
+  "glove",
+  "skin",
+  "cloth",
+  "jersey",
+  "sock",
+  "shoe",
+  "book",
+  "comic",
+  "newspaper",
+  "cup",
+  "mug",
+  "plate",
+  "trash",
+  "garbage",
+  "plastic bag",
+  "bag",
+  "wallet",
+  "cellphone",
+  "phone",
+  "remote",
+  "screen",
+  "keyboard",
+  "food",
+  "fruit",
+  "banana",
+  "apple",
+  "bread",
+];
 
 export interface ClassificationResult {
   materialType: MaterialType;
@@ -80,18 +103,11 @@ export interface ClassificationResult {
   confidence: number;
 }
 
-/**
- * Where a fine-tuned classifier head (trained by scripts/ml/train.ts on
- * your own kiosk images) is expected to live. If this file doesn't exist,
- * classifyImage() falls back to the zero-shot ImageNet keyword mapping
- * below — see docs/ml.md for why you'll want to replace it.
- */
 const FINE_TUNED_HEAD_PATH =
   process.env.FIBOTT_ML_HEAD_PATH ?? path.join(process.cwd(), "models", "bottle-can-head", "weights.json");
 
 interface SerializedHead {
   inputDim: number;
-  /** Present in two-layer heads trained after the hidden-layer upgrade. Absent = legacy single-layer. */
   hiddenUnits?: number;
   labels: string[];
   weights: { shape: number[]; data: number[] }[];
@@ -125,7 +141,6 @@ function loadModel(): Promise<mobilenetTypes.MobileNet> {
 async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
   const tf = await getTf();
 
-  // 1. Try decoding with Sharp first
   try {
     const sharp = await getSharp();
     const { data, info } = await sharp(imageBuffer)
@@ -143,7 +158,6 @@ async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
     });
   }
 
-  // 2. Pure JavaScript fallback: jpeg-js (zero C++ native shared library dependencies)
   const rawDecoded = jpeg.decode(imageBuffer, { useTArray: true, formatAsRGBA: false });
 
   const srcWidth = rawDecoded.width;
@@ -154,7 +168,6 @@ async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
 
   const targetData = new Int32Array(IMAGE_SIZE * IMAGE_SIZE * 3);
 
-  // Nearest-neighbor resize to 224x224 RGB
   for (let y = 0; y < IMAGE_SIZE; y++) {
     const srcY = Math.floor((y * srcHeight) / IMAGE_SIZE);
     for (let x = 0; x < IMAGE_SIZE; x++) {
@@ -162,82 +175,57 @@ async function decodeToTensor(imageBuffer: Buffer): Promise<tfTypes.Tensor3D> {
       const srcIdx = (srcY * srcWidth + srcX) * step;
       const targetIdx = (y * IMAGE_SIZE + x) * 3;
 
-      targetData[targetIdx] = srcData[srcIdx];         // R
-      targetData[targetIdx + 1] = srcData[srcIdx + 1]; // G
-      targetData[targetIdx + 2] = srcData[srcIdx + 2]; // B
+      targetData[targetIdx] = srcData[srcIdx];
+      targetData[targetIdx + 1] = srcData[srcIdx + 1];
+      targetData[targetIdx + 2] = srcData[srcIdx + 2];
     }
   }
 
   return tf.tensor3d(targetData, [IMAGE_SIZE, IMAGE_SIZE, 3], "int32");
 }
 
-/**
- * Fast pixel-level opacity and color variance analysis:
- * - Opaque objects (Aluminum Cans): High RGB channel variance, opaque solid background/printed graphics.
- * - Translucent objects (Plastic Bottles): Smooth luminance distribution, high background transparency/refraction.
- */
-function analyzeOpacityAndColor(imageBuffer: Buffer): "ALUMINUM_CAN" | "PET_BOTTLE" {
-  try {
-    const decoded = jpeg.decode(imageBuffer, { useTArray: true, formatAsRGBA: false });
-    const data = decoded.data;
-    const len = data.length;
-
-    let colorDiffSum = 0;
-    const sampleStep = 12; // Sample every 4th pixel for speed
-    let samples = 0;
-
-    for (let i = 0; i < len; i += sampleStep) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const diff = Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
-      colorDiffSum += diff;
-      samples++;
-    }
-
-    const avgColorDiff = samples > 0 ? colorDiffSum / samples : 0;
-    // Opaque aluminum cans with printed graphics have higher color variance (>30)
-    // Clear/translucent bottles have lower color variance
-    if (avgColorDiff > 30) {
-      return "ALUMINUM_CAN";
-    }
-    return "PET_BOTTLE";
-  } catch {
-    return "PET_BOTTLE";
-  }
-}
-
 function mapPrediction(
   predictions: Array<{ className: string; probability: number }>,
   imageBuffer?: Buffer
 ): ClassificationResult {
+  const top = predictions[0];
+  const topLower = (top?.className ?? "").toLowerCase();
+
+  // 1. Explicit non-recyclable reject check (paper, hand, cup, clothing, etc.)
+  for (const rejKey of NON_RECYCLABLE_KEYWORDS) {
+    if (topLower.includes(rejKey)) {
+      return {
+        materialType: "REJECTED",
+        label: `rejected:${top?.className ?? "non-recyclable"}`,
+        confidence: top?.probability ?? 0.9,
+      };
+    }
+  }
+
+  // 2. Strict keyword check for genuine bottles and cans
   for (const { className, probability } of predictions) {
     const lower = className.toLowerCase();
     for (const [materialType, keywords] of Object.entries(LABEL_KEYWORDS) as [
       "PET_BOTTLE" | "ALUMINUM_CAN",
       string[],
     ][]) {
-      if (keywords.some((keyword) => lower.includes(keyword))) {
+      if (keywords.some((keyword) => lower.includes(keyword)) && probability >= MIN_CONFIDENCE) {
         return { materialType, label: className, confidence: Math.max(probability, 0.85) };
       }
     }
   }
 
-  const top = predictions[0];
-  const topLabel = top?.className ?? "object";
-  const confidence = top?.probability ?? 0.85;
-
-  // Always Accept Fallback: Use opacity & color variance analysis to decide between PET_BOTTLE and ALUMINUM_CAN
-  const fallbackMaterial = imageBuffer ? analyzeOpacityAndColor(imageBuffer) : "PET_BOTTLE";
+  // 3. Fallback: Reject any unrecognized item (hands, paper, background, random trash)
+  const topLabel = top?.className ?? "unrecognized_item";
+  const confidence = top?.probability ?? 0.0;
 
   return {
-    materialType: fallbackMaterial,
-    label: `${fallbackMaterial === "ALUMINUM_CAN" ? "can" : "bottle"}:${topLabel}`,
+    materialType: "REJECTED",
+    label: `rejected:${topLabel}`,
     confidence,
   };
 }
 
-/** Raw MobileNet embedding for a decoded image — used by scripts/ml/train.ts. */
 export async function embedImage(imageBuffer: Buffer): Promise<Float32Array> {
   const model = await loadModel();
   const tensor = await decodeToTensor(imageBuffer);
@@ -267,7 +255,7 @@ function loadFineTunedHead(): Promise<{ model: tfTypes.LayersModel; labels: stri
       const layers: tfTypes.layers.Layer[] = raw.hiddenUnits
         ? [
             tf.layers.dense({ inputShape: [raw.inputDim], units: raw.hiddenUnits, activation: "relu" }),
-            tf.layers.dropout({ rate: 0 }), // no dropout at inference
+            tf.layers.dropout({ rate: 0 }),
             tf.layers.dense({ units: raw.labels.length, activation: "softmax" }),
           ]
         : [
@@ -299,7 +287,7 @@ async function classifyWithFineTunedHead(
           if (values[i] > values[bestIdx]) bestIdx = i;
         }
         const confidence = values[bestIdx];
-        if (confidence < MIN_CONFIDENCE) {
+        if (confidence < 0.70) {
           return { materialType: "REJECTED", label: `fine-tuned:low-confidence`, confidence };
         }
         const label = headLabels[bestIdx] as MaterialType;
@@ -377,7 +365,7 @@ export async function classifyImage(imageBuffer: Buffer): Promise<Classification
       return zeroShotRes;
     }
 
-    // Default zero-shot path
+    // Default zero-shot path with strict bottle/can verification
     const model = await loadModel();
     const tensor = await decodeToTensor(imageBuffer);
     try {

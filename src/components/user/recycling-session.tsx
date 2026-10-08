@@ -263,13 +263,17 @@ export function RecyclingSession() {
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-900 dark:text-amber-200 space-y-1">
                 <div className="flex items-center gap-2 font-semibold text-sm">
                   <AlertTriangle className="size-4 text-amber-500 shrink-0" />
-                  Item Rejected / Unrecognized
+                  Item Rejected (Not a Bottle or Can)
                 </div>
                 <p className="text-xs text-amber-800 dark:text-amber-300">
-                  Detected label: <span className="font-mono font-bold">&quot;{lastDeposit.classificationLabel}&quot;</span>
+                  Detected status: <span className="font-mono font-bold">&quot;{
+                    lastDeposit.classificationLabel?.includes("not_bottle_or_can")
+                      ? "Not a plastic bottle or aluminum can"
+                      : lastDeposit.classificationLabel?.replace(/^(rejected:|fine-tuned:)/, "")
+                  }&quot;</span>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  💡 Tip: Hold a plastic bottle or aluminum can directly facing the camera lens and hold steady for 1 second.
+                  💡 Tip: The kiosk only accepts plastic bottles (PET) and aluminum cans. Please ensure your bottle or can is placed directly in the chute.
                 </p>
               </div>
             ) : lastDeposit && lastDeposit.status === "ACCEPTED" ? (

@@ -1,256 +1,259 @@
 /*
- * Fibott — KIOSK_CONTROLLER firmware  (Version 1)
+ * Fibott — 2nd ESP32 Kiosk Controller (Servo Gate & Buzzer Actuator)
  *
- * Board:    ESP32 Dev Module  (Arduino IDE → Tools → Board)
+ * Board:    ESP32 Dev Module / NodeMCU-32S / ESP32 WROOM-32
  *
- * Libraries (Sketch → Include Library → Manage Libraries):
- *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
+ * ── Hardware Wiring ─────────────────────────────────────────────────────────────
+ *   GPIO16 (RX2)  ←  ESP32-CAM GPIO13 (TX)
+ *   GPIO17 (TX2)  →  ESP32-CAM GPIO14 (RX)
+ *   GND           ── ESP32-CAM GND (MANDATORY COMMON GROUND)
+ *   GPIO18        →  Servo signal wire (SG90 / MG90S Gate Actuator)
+ *   GPIO19        →  Buzzer (+) / signal lead
+ *   GND           →  Buzzer (-) lead
+ *   GPIO2         →  Status LED
  *
- * Legacy controller-era prototype.
- *
- * The mobile-first baseline does not use this board as the active kiosk
- * controller. Keep this sketch only as migration support while the repo
- * moves to the single-ESP32-CAM design.
- *
- * ── UART command protocol ──────────────────────────────────────────────────
- *  All messages are newline-terminated ASCII. One command or response per line.
- *
- *  Legacy Controller → Camera:
- *    PING                      Health check
- *    STATUS                    Request camera status
- *    CAPTURE <session_code>    Capture image and upload with this session code
- *    SERVO OPEN                Open the gate servo
- *    SERVO CLOSE               Close the gate servo
- *
- *  Legacy Camera → Controller:
- *    PONG                      Response to PING
- *    STATUS READY              Camera initialised and idle
- *    STATUS ERROR              Camera not ready
- *    RESULT ACCEPT             Backend accepted the deposit
- *    RESULT REJECT             Backend rejected the deposit
- *    RESULT ERROR              Upload or network error
- *    SERVO OPENED              Servo open confirmed
- *    SERVO CLOSED              Servo close confirmed
- *
- * ── State machine ──────────────────────────────────────────────────────────
- *  BOOT → CONNECT_WIFI → CONNECT_CAM → READY
- *  READY → WAIT_BUTTON
- *  WAIT_BUTTON →(START)→ CLAIMING
- *  CLAIMING →(200)→ CAPTURING | →(fail)→ WAIT_BUTTON
- *  CAPTURING →(RESULT)→ ACCEPTING | REJECTING | WAIT_BUTTON(error)
- *  ACCEPTING → WAIT_BUTTON
- *  REJECTING → WAIT_BUTTON
- *
- * See docs/STATUS.md for overall project status.
- * See hardware/README.md for wiring detail and device provisioning.
+ * ── Functionality ───────────────────────────────────────────────────────────────
+ *   1. Listens for UART commands from ESP32-CAM (Serial2 at 115200 baud).
+ *   2. Opens/closes the servo gate with non-blocking timing.
+ *   3. Plays audio feedback for Boot, Ready, Accepted, and Rejected deposits.
+ *   4. Allows interactive testing via USB Serial Monitor (commands: OPEN, CLOSE, BEEP, REJECT).
  */
 
 #include "config.h"
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <ArduinoJson.h>
+#include "driver/ledc.h"
 
-// ── UART to camera ────────────────────────────────────────────────────────────
-HardwareSerial CamSerial(2);  // UART2 — reassigned to GPIO16/17 in setup()
+HardwareSerial CamSerial(2); // UART2: RX2=GPIO16, TX2=GPIO17
 
-// Send a command to the camera and wait for a response line.
-// Returns the trimmed response, or "" on timeout.
-static String camSend(const char *cmd, unsigned long timeoutMs = CAM_UART_TIMEOUT_MS) {
-  CamSerial.println(cmd);
-  CamSerial.flush();
-  Serial.printf("[uart→cam] %s\n", cmd);
-  unsigned long deadline = millis() + timeoutMs;
-  while (millis() < deadline) {
-    if (CamSerial.available()) {
-      String resp = CamSerial.readStringUntil('\n');
-      resp.trim();
-      if (resp.length()) {
-        Serial.printf("[cam→uart] %s\n", resp.c_str());
-        return resp;
-      }
-    }
-    delay(5);
-  }
-  Serial.println("[uart] timeout");
-  return "";
+#define LOG(tag, msg)       Serial.printf("[%-8s] %s\n", tag, msg)
+#define LOGF(tag, fmt, ...) Serial.printf("[%-8s] " fmt "\n", tag, ##__VA_ARGS__)
+
+// ── Servo Control (LEDC Timer 0 / Channel 0, 50Hz 16-bit) ────────────────────
+static void servoSetup() {
+  LOGF("SERVO", "Initialising servo on GPIO%d (50Hz)", PIN_SERVO);
+  ledc_timer_config_t tc = {};
+  tc.speed_mode      = LEDC_LOW_SPEED_MODE;
+  tc.duty_resolution = LEDC_TIMER_16_BIT;
+  tc.timer_num       = LEDC_TIMER_0;
+  tc.freq_hz         = 50;
+  tc.clk_cfg         = LEDC_AUTO_CLK;
+  ledc_timer_config(&tc);
+
+  ledc_channel_config_t cc = {};
+  cc.gpio_num   = PIN_SERVO;
+  cc.speed_mode = LEDC_LOW_SPEED_MODE;
+  cc.channel    = LEDC_CHANNEL_0;
+  cc.intr_type  = LEDC_INTR_DISABLE;
+  cc.timer_sel  = LEDC_TIMER_0;
+  cc.duty       = 0;
+  cc.hpoint     = 0;
+  ledc_channel_config(&cc);
 }
 
-// ── Buzzer ────────────────────────────────────────────────────────────────────
-static void beep(int n, int onMs = 200, int gapMs = 150) {
-  for (int i = 0; i < n; i++) {
-    digitalWrite(PIN_BUZZER, HIGH); delay(onMs);
+static void servoWrite(uint32_t us) {
+  uint32_t duty = (uint32_t)((uint64_t)us * 65536 / 20000);
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+static void gateClose() {
+  LOGF("GATE", "Servo Closed (%u µs)", SERVO_CLOSED_US);
+  servoWrite(SERVO_CLOSED_US);
+}
+
+static void gateOpen() {
+  LOGF("GATE", "Servo OPEN (%u µs)", SERVO_OPEN_US);
+  servoWrite(SERVO_OPEN_US);
+}
+
+// ── Buzzer Driver ─────────────────────────────────────────────────────────────
+#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
+static void buzzerPwmSetup() {
+  ledc_timer_config_t tc = {};
+  tc.speed_mode      = LEDC_LOW_SPEED_MODE;
+  tc.duty_resolution = LEDC_TIMER_10_BIT;
+  tc.timer_num       = LEDC_TIMER_1;
+  tc.freq_hz         = 2000;
+  tc.clk_cfg         = LEDC_AUTO_CLK;
+  ledc_timer_config(&tc);
+
+  ledc_channel_config_t cc = {};
+  cc.gpio_num   = PIN_BUZZER;
+  cc.speed_mode = LEDC_LOW_SPEED_MODE;
+  cc.channel    = LEDC_CHANNEL_1;
+  cc.intr_type  = LEDC_INTR_DISABLE;
+  cc.timer_sel  = LEDC_TIMER_1;
+  cc.duty       = 0;
+  cc.hpoint     = 0;
+  ledc_channel_config(&cc);
+}
+
+static void buzzerTone(uint32_t freqHz) {
+  if (freqHz == 0) {
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+    return;
+  }
+  ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1, freqHz);
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 512);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+}
+
+static void buzzerNoTone() {
+  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+}
+#endif
+
+static void buzzerSetup() {
+  pinMode(PIN_BUZZER, OUTPUT);
+#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
+  buzzerPwmSetup();
+  buzzerNoTone();
+#else
+  digitalWrite(PIN_BUZZER, LOW);
+#endif
+  LOG("BUZZER", "Buzzer ready on GPIO" String(PIN_BUZZER));
+}
+
+static void playBeep(int count, int onMs = 150, int gapMs = 100, uint32_t freqHz = 2500) {
+  for (int i = 0; i < count; i++) {
+#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
+    buzzerTone(freqHz);
+    delay(onMs);
+    buzzerNoTone();
+#else
+    digitalWrite(PIN_BUZZER, HIGH);
+    delay(onMs);
     digitalWrite(PIN_BUZZER, LOW);
-    if (i < n - 1) delay(gapMs);
+#endif
+    if (i < count - 1) delay(gapMs);
   }
 }
 
-// ── Button debounce ───────────────────────────────────────────────────────────
-// Returns true if the button is pressed (active-LOW, debounced).
-static bool buttonPressed(int pin) {
-  if (digitalRead(pin) != LOW) return false;
-  delay(30);
-  return digitalRead(pin) == LOW;
-}
+// ── Status LED ────────────────────────────────────────────────────────────────
+static void ledOn()  { digitalWrite(PIN_LED_STATUS, HIGH); }
+static void ledOff() { digitalWrite(PIN_LED_STATUS, LOW);  }
 
-// ── Backend: claim oldest pending session ─────────────────────────────────────
-// Returns the session code on success, or "" on failure.
-static String claimSession() {
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(10000); // 10s timeout in milliseconds
-
-  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
-    Serial.println("[http] claimSession: connect failed");
-    return "";
-  }
-
-  client.printf("POST /api/device/sessions/claim HTTP/1.1\r\n");
-  client.printf("Host: %s\r\n", BACKEND_HOST);
-  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
-  client.printf("Content-Length: 0\r\n");
-  client.printf("Connection: close\r\n\r\n");
-  client.flush();
-
-  String statusLine = client.readStringUntil('\n');
-  int statusCode = 0;
-  if (statusLine.startsWith("HTTP/1."))
-    statusCode = statusLine.substring(9, 12).toInt();
-  while (client.connected()) {
-    if (client.readStringUntil('\n') == "\r") break;
-  }
-  String body = client.readString();
-  client.stop();
-
-  Serial.printf("[http] claim %d — %s\n", statusCode, body.c_str());
-  if (statusCode != 200) return "";
-
-  JsonDocument doc;
-  if (deserializeJson(doc, body) != DeserializationError::Ok) return "";
-  return doc["sessionCode"].as<String>();
-}
-
-// ── State machine ─────────────────────────────────────────────────────────────
-enum State { WAIT_BUTTON, CLAIMING, CAPTURING, ACCEPTING, REJECTING };
-static State state = WAIT_BUTTON;
-static String activeCode = "";
-
-static void handleWaitButton() {
-  // Check CANCEL (no-op in idle, just consume the press)
-  if (buttonPressed(BTN_CANCEL)) {
-    Serial.println("[btn] cancel in idle — no-op");
-    while (digitalRead(BTN_CANCEL) == LOW) delay(10);
-    return;
-  }
-
-  if (!buttonPressed(BTN_START)) return;
-  while (digitalRead(BTN_START) == LOW) delay(10);  // wait for release
-
-  Serial.println("[btn] START pressed — claiming session");
-  state = CLAIMING;
-}
-
-static void handleClaiming() {
-  String code = claimSession();
-  if (!code.length()) {
-    Serial.println("[claim] no session — wait for user to open app");
-    beep(2, 100, 80);  // two short beeps = no session found
-    state = WAIT_BUTTON;
-    return;
-  }
-
-  activeCode = code;
-  Serial.printf("[claim] session %s — sending CAPTURE\n", code.c_str());
-  beep(1, 80);  // single short beep = session found
-
-  String cmd = "CAPTURE " + code;
-  state = CAPTURING;
-  // CAPTURE is sent on the next tick so state is already CAPTURING when we wait
-  String resp = camSend(cmd.c_str(), RESULT_TIMEOUT_MS);
-
-  if (resp == "RESULT ACCEPT") {
-    state = ACCEPTING;
-  } else if (resp == "RESULT REJECT") {
-    state = REJECTING;
-  } else {
-    Serial.println("[capture] error or timeout");
-    beep(1, 500);
-    activeCode = "";
-    state = WAIT_BUTTON;
+static void flashLed(int times, int onMs = 120, int offMs = 100) {
+  for (int i = 0; i < times; i++) {
+    ledOn();  delay(onMs);
+    ledOff(); if (i < times - 1) delay(offMs);
   }
 }
 
-static void handleAccepting() {
-  Serial.println("[accept] sending SERVO OPEN");
-  camSend("SERVO OPEN", 3000);
+// ── Gate Cycle Execution ──────────────────────────────────────────────────────
+static void executeDepositAcceptCycle() {
+  LOG("ACTUATOR", "🌟 Deposit ACCEPTED — Opening gate & playing chime");
+  
+  // 1. Success Chime (High tone)
+  playBeep(1, 280, 0, 3200);
+
+  // 2. Open Gate Servo
+  ledOn();
+  gateOpen();
+
+  // 3. Hold gate open for configured duration
   delay(GATE_OPEN_MS);
-  Serial.println("[accept] sending SERVO CLOSE");
-  camSend("SERVO CLOSE", 3000);
-  beep(1, 300);  // one long beep = success
-  activeCode = "";
-  state = WAIT_BUTTON;
-  Serial.println("[state] → WAIT_BUTTON");
+
+  // 4. Close Gate Servo
+  gateClose();
+  ledOff();
+  LOG("ACTUATOR", "🔒 Gate closed — Ready for next item");
 }
 
-static void handleRejecting() {
-  beep(3);  // three beeps = rejected
-  activeCode = "";
-  state = WAIT_BUTTON;
-  Serial.println("[state] → WAIT_BUTTON");
+static void executeDepositRejectCycle() {
+  LOG("ACTUATOR", "🚫 Deposit REJECTED — Gate stays LOCKED");
+  
+  // 3 rapid warning beeps
+  playBeep(3, 110, 80, 1600);
+  gateClose();
+}
+
+// ── Process Incoming Commands ─────────────────────────────────────────────────
+static void handleCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+
+  LOGF("RECV", "Command: '%s'", cmd.c_str());
+
+  if (cmd == "CMD:OPEN" || cmd == "OPEN") {
+    executeDepositAcceptCycle();
+  }
+  else if (cmd == "CMD:REJECT" || cmd == "REJECT") {
+    executeDepositRejectCycle();
+  }
+  else if (cmd == "CMD:READY" || cmd == "READY") {
+    LOG("ACTUATOR", "Session active — Prompting user");
+    playBeep(1, 100, 0, 2800);
+    flashLed(2, 120, 100);
+  }
+  else if (cmd == "CMD:BOOT" || cmd == "BOOT") {
+    LOG("ACTUATOR", "ESP32-CAM booted successfully");
+    playBeep(1, 80, 0, 2400);
+    flashLed(1, 200, 0);
+  }
+  else if (cmd == "CMD:ERROR" || cmd == "ERROR") {
+    LOG("ACTUATOR", "Error notification from camera");
+    playBeep(1, 400, 0, 1000);
+  }
+  else if (cmd == "CLOSE") {
+    gateClose();
+  }
+  else if (cmd == "BEEP") {
+    playBeep(2, 100, 80, 2500);
+  }
+  else if (cmd == "STATUS") {
+    Serial.printf("[STATUS  ] Firmware: %s | Servo: GPIO%d | Buzzer: GPIO%d\n",
+                  FIRMWARE_VERSION, PIN_SERVO, PIN_BUZZER);
+  }
+  else {
+    LOGF("WARN", "Unknown command: '%s'", cmd.c_str());
+  }
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n[boot] Fibott KIOSK_CONTROLLER");
+  delay(300);
 
-  // Buzzer
-  pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_BUZZER, LOW);
-
-  // Buttons — active-LOW with internal pull-up
-  pinMode(BTN_START,   INPUT_PULLUP);
-  pinMode(BTN_CONFIRM, INPUT_PULLUP);
-  pinMode(BTN_CANCEL,  INPUT_PULLUP);
-  pinMode(BTN_ADMIN,   INPUT_PULLUP);
-
-  // UART to camera
+  // Initialize UART2 for communication with ESP32-CAM
   CamSerial.begin(CAM_UART_BAUD, SERIAL_8N1, CAM_UART_RX, CAM_UART_TX);
 
-  // WiFi
-  Serial.printf("[wifi] connecting to %s", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.printf("\n[wifi] %s\n", WiFi.localIP().toString().c_str());
+  Serial.println("\n");
+  Serial.println("╔══════════════════════════════════════════════════╗");
+  Serial.println("║   Fibott 2nd ESP32 Kiosk Actuator Controller    ║");
+  Serial.printf( "║  Firmware v%-38s║\n", FIRMWARE_VERSION);
+  Serial.println("║  Servo Gate (GPIO18) | Buzzer (GPIO19)           ║");
+  Serial.println("╚══════════════════════════════════════════════════╝");
+  Serial.println();
 
-  // Ping camera — retry until it responds
-  Serial.print("[cam] waiting for camera PONG");
-  while (true) {
-    String resp = camSend("PING", 3000);
-    if (resp == "PONG") break;
-    Serial.print(".");
-    delay(500);
-  }
-  Serial.println("\n[cam] camera ready");
+  pinMode(PIN_LED_STATUS, OUTPUT);
+  ledOff();
 
-  beep(3, 100, 80);  // three short beeps = kiosk ready
-  Serial.println("[boot] ready — waiting for START button");
+  buzzerSetup();
+  servoSetup();
+  gateClose();
+
+  // Boot beep
+  playBeep(1, 100, 0, 2600);
+  flashLed(2, 100, 80);
+
+  LOG("BOOT", "Kiosk Actuator Controller Ready!");
+  LOG("BOOT", "Listening for ESP32-CAM UART commands (CMD:OPEN, CMD:REJECT, CMD:READY)...");
+  LOG("BOOT", "Type 'OPEN', 'CLOSE', 'REJECT', or 'BEEP' in Serial Monitor for manual test.");
 }
 
-// ── Loop ──────────────────────────────────────────────────────────────────────
+// ── Main Loop ─────────────────────────────────────────────────────────────────
 void loop() {
-  // WiFi watchdog
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[wifi] reconnecting...");
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-    Serial.printf("[wifi] %s\n", WiFi.localIP().toString().c_str());
+  // 1. Check for incoming commands from ESP32-CAM over UART2
+  if (CamSerial.available()) {
+    String camCmd = CamSerial.readStringUntil('\n');
+    handleCommand(camCmd);
   }
 
-  switch (state) {
-    case WAIT_BUTTON: handleWaitButton(); break;
-    case CLAIMING:    handleClaiming();   break;
-    case ACCEPTING:   handleAccepting();  break;
-    case REJECTING:   handleRejecting();  break;
-    case CAPTURING:   break;  // never reaches loop() in CAPTURING — handled inline
+  // 2. Check for manual debugging commands from USB Serial Monitor
+  if (Serial.available()) {
+    String debugCmd = Serial.readStringUntil('\n');
+    handleCommand(debugCmd);
   }
 }

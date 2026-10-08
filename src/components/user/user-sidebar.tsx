@@ -2,6 +2,7 @@ import { NavLink } from "@/components/shared/nav-link";
 
 export const userNavLinks = [
   { href: "/dashboard", label: "Dashboard", exact: true },
+  { href: "/dashboard/notifications", label: "Notifications & Inbox" },
   { href: "/dashboard/history", label: "Scan & Deposit History" },
   { href: "/dashboard/wallet", label: "Points Wallet" },
   { href: "/dashboard/leaderboard", label: "Leaderboard" },
