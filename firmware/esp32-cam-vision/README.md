@@ -13,21 +13,21 @@ This firmware turns the **AI-Thinker ESP32-CAM** into a dedicated **Computer Vis
    - Detects and rejects **Flat White Paper, Tissues, and Cardboard**.
    - Detects and rejects **Empty/Dark chute scenes**.
    - Enforces strict minimum confidence (≥ 78%) and separation margin (≥ 50%).
-4. **UART Control Protocol:** Transmits commands (`CMD:OPEN`, `CMD:REJECT`, `CMD:READY`, `CMD:BOOT`) to the 2nd ESP32 Kiosk Controller on GPIO13 (TX).
+4. **Wireless ESP-NOW Control Protocol:** Transmits commands (`CMD:OPEN`, `CMD:REJECT`, `CMD:READY`, `CMD:BOOT`) wirelessly to the 2nd ESP32 Kiosk Controller over 2.4 GHz ESP-NOW with zero physical wiring.
 5. **WiFi & Cloud Telemetry:** Polls user recycling sessions, background-syncs deposit records with Vercel/Postgres, and streams hardware logs.
 
 ---
 
 ## 🔌 Hardware Wiring
 
+> ⚡ **ZERO WIRING TO 2ND ESP32:** Inter-ESP32 communication is completely wireless (ESP-NOW)!
+
 | ESP32-CAM Pin | Connect To | Description |
 |:---|:---|:---|
-| **GPIO13 (TX)** | 2nd ESP32 **GPIO16 (RX2)** | Command transmitter |
-| **GPIO14 (RX)** | 2nd ESP32 **GPIO17 (TX2)** | Feedback receiver (optional) |
-| **GND** | 2nd ESP32 **GND** & Power GND | **Mandatory Common Ground** |
-| **5V** | 5V 2A Power Supply | Power |
-| **GPIO33** | Built-in Red LED | Status Indicator |
-| **GPIO4** | Built-in Flash LED | Chute illumination |
+| **5V** | 5V 2A Power Supply (+) | Logic power |
+| **GND** | Power Supply (-) | Ground |
+| **GPIO33** | Built-in Red LED (Internal) | Status Indicator |
+| **GPIO4** | Built-in Flash LED (Internal) | Chute illumination |
 
 ---
 

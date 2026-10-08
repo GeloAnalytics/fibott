@@ -61,35 +61,33 @@ Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The 
 
 ## Firmware Specifications
 
-Fibott has one canonical firmware under `firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/`:
+Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator Node):
 
-| Firmware Folder | Target Hardware | Audio Driver | Pin Mapping & Description |
+| Firmware Folder | Target Hardware | Primary Role | Description |
 |---|---|---|---|
-| [`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin`](../firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/) | AI-Thinker ESP32-CAM | Active / Passive 2-Pin Buzzer | Servo on **GPIO13**, Buzzer `(+)` on **GPIO14**, `(-)` to **GND**, Status LED on **GPIO33**. Comprehensive serial diagnostics, admin telemetry, periodic heartbeat. |
+| [`firmware/esp32-cam-vision/`](../firmware/esp32-cam-vision/) | AI-Thinker ESP32-CAM | Camera & On-Device AI | OV2640 camera capture, MobileNetV1 TinyML inference in PSRAM, hand/paper reject filters, cloud backend sync, **ESP-NOW 2.4 GHz wireless command transmitter (0 physical wires to 2nd ESP32)**. |
+| [`firmware/kiosk-controller/`](../firmware/kiosk-controller/) | Standard ESP32 DevKit | Gate & Audio Actuator | SG90/MG90S Gate Servo on **GPIO18**, Buzzer on **GPIO19**, Status LED on **GPIO2**, **ESP-NOW 2.4 GHz wireless command receiver**, USB Serial Monitor bench testing. |
 
-> `firmware/esp32-cam/` (if still present on disk) is a legacy no-buzzer sketch kept only in git history — do not flash it.
-
-### Audible Feedback Protocol (Buzzer Firmware)
+### Audible Feedback Protocol (Buzzer)
 
 | State / Event | Beep Pattern | Frequency (Passive Mode) |
 |---|---|---|
-| **Boot Complete** | 1 short beep (80ms) | 2700 Hz |
-| **Session Active / Ready** | 1 prompt beep (100ms) + LED flash | 3000 Hz |
-| **Deposit Accepted** | 1 long tone (300ms) + Gate opens | 3500 Hz |
-| **Deposit Rejected** | 3 rapid beeps (120ms each) | 1800 Hz |
-| **Upload / Network Error** | 1 long warning tone (500ms) | 1200 Hz |
+| **Boot Complete** | 1 short beep (80ms) | 2400–2600 Hz |
+| **Session Active / Ready** | 1 prompt beep (100ms) + LED flash | 2800–3000 Hz |
+| **Deposit Accepted** | 1 long chime (280ms) + Gate opens 3s | 3200–3500 Hz |
+| **Deposit Rejected** | 3 rapid warning beeps (110ms each) | 1600–1800 Hz |
+| **Upload / System Error** | 1 low warning buzz (400ms) | 1000–1200 Hz |
 
 ---
 
 ## Hardware Specifications
 
-- **Microcontroller:** AI-Thinker ESP32-CAM (with PSRAM enabled).
-- **Camera Module:** OV2640 JPEG camera module (VGA 640x480 capture).
-- **Gate Actuator:** SG90 / MG90S Micro Servo driven via ESP32 `ledc` PWM on **GPIO13**.
-- **Audible Alerts:** 
-  - 2-Pin active/passive piezo element connected between **GPIO14** and **GND**.
-  - OR 3-Pin active/passive breakout module (KY-012, HW-508, KY-006) powered by **5V/3.3V**, **GND**, and **GPIO14** (`SIG`).
-- **Power Supply:** 5V 2A+ DC supply to ESP32-CAM `5V` pin (camera & servo draw peak currents up to 1.5A during capture & motor turn).
+- **Vision Node:** AI-Thinker ESP32-CAM (with PSRAM enabled) with OV2640 JPEG camera module.
+- **Actuator Node:** Standard ESP32 DevKit / NodeMCU-32S / ESP32 WROOM-32.
+- **Interconnect:** **100% Wireless via Espressif ESP-NOW (2.4 GHz, sub-10ms latency). Zero physical wiring between boards.**
+- **Gate Actuator:** SG90 / MG90S Micro Servo driven via ESP32 `ledc` PWM on **GPIO18** of the Actuator Node.
+- **Audible Alerts:** 5V Active or Passive piezo buzzer connected to **GPIO19** and **GND** of the Actuator Node.
+- **Power Supply:** 5V 2A+ DC supplies (clean logic power for camera, dedicated power for motor to ensure complete electrical isolation).
 
 ---
 

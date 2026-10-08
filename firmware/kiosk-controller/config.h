@@ -6,16 +6,19 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "2.0.0-actuator-controller"
+#define FIRMWARE_VERSION "2.1.0-wireless-actuator-controller"
 
-// ── UART Connection to ESP32-CAM ──────────────────────────────────────────────
-// Connect:
-//   ESP32-CAM GPIO13 (TX)  →  Controller GPIO16 (RX2)
-//   ESP32-CAM GPIO14 (RX)  ←  Controller GPIO17 (TX2)
-//   ESP32-CAM GND          ──  Controller GND (Mandatory Common Ground!)
-#define CAM_UART_BAUD 115200
-#define CAM_UART_RX   16
-#define CAM_UART_TX   17
+// ── Wireless Inter-ESP32 Protocol (ESP-NOW 2.4 GHz) ───────────────────────────
+// ZERO physical wiring required between ESP32-CAM and ESP32 DevKit!
+// Commands (CMD:OPEN, CMD:REJECT, CMD:READY, CMD:BOOT, etc.) are received
+// wirelessly over 2.4 GHz ESP-NOW with sub-10ms response time.
+#define WIRELESS_MAGIC "FIBO"
+
+// ── WiFi Channel Synchronization ──────────────────────────────────────────────
+// By connecting to the same 2.4GHz WiFi AP as the ESP32-CAM, this controller
+// automatically synchronizes to the exact same Wi-Fi channel.
+#define WIFI_SSID     "Fibott"
+#define WIFI_PASSWORD ""
 
 // ── Servo Gate Actuator Configuration ─────────────────────────────────────────
 // Connect SG90 / MG90S signal wire to GPIO18

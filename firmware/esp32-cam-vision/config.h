@@ -2,16 +2,17 @@
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Fibott ESP32-CAM Vision & AI Inference Firmware — config.h
-// (Dual-ESP32 Architecture: Vision & Cloud Node)
+// (Dual-ESP32 Wireless Architecture: Vision & Cloud Node)
 //
-// In this revised architecture:
+// In this wireless architecture:
 //   - ESP32-CAM is DEDICATED to Camera + TinyML + Cloud Sync.
 //   - The Servo Gate and Buzzer are driven by the secondary ESP32 (Kiosk Controller).
-//   - ESP32-CAM sends trigger commands (CMD:OPEN, CMD:REJECT, CMD:READY) via UART.
+//   - ESP32-CAM sends trigger commands (CMD:OPEN, CMD:REJECT, CMD:READY, etc.)
+//     wirelessly via 2.4 GHz ESP-NOW with ZERO physical wiring between boards.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "2.0.0-dual-esp32-strict-ai"
+#define FIRMWARE_VERSION "2.1.0-wireless-espnow-vision"
 
 // ── Strict Local ML Inference & Rejection Configuration ─────────────────────
 // With a 2-class softmax model (PET vs CAN), random clutter / hands / paper
@@ -44,14 +45,11 @@
 #define DEVICE_API_KEY "fibott_dev_7cd2f63b3fcaae7fa973ea58d8f94680df86c05f589bd189"
 #define PATH_LOGS      "/api/device/logs"
 
-// ── UART Communication to 2nd ESP32 (Kiosk Actuator Controller) ──────────────
-// Connect:
-//   ESP32-CAM GPIO13 (TX)  →  2nd ESP32 GPIO16 (RX2)
-//   ESP32-CAM GPIO14 (RX)  ←  2nd ESP32 GPIO17 (TX2)
-//   ESP32-CAM GND          ──  2nd ESP32 GND (Mandatory Common Ground)
-#define UART_TO_CONTROLLER_BAUD 115200
-#define PIN_CONTROLLER_TX       13
-#define PIN_CONTROLLER_RX       14
+// ── Wireless Inter-ESP32 Protocol (ESP-NOW 2.4 GHz) ───────────────────────────
+// Zero physical wiring between ESP32-CAM and ESP32 DevKit Controller!
+// Commands are broadcast over ESP-NOW on the active Wi-Fi channel.
+#define WIRELESS_MAGIC        "FIBO"
+#define WIRELESS_ESPNOW_CHANNEL 0      // 0 = follow current active Wi-Fi channel
 
 // ── Status LED Configuration ──────────────────────────────────────────────────
 #define PIN_LED_STATUS 33 // Onboard red LED (active-LOW)

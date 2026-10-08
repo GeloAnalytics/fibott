@@ -1,6 +1,6 @@
-# Fibott — Dual-ESP32 Hardware & Firmware System
+# Fibott — Dual-ESP32 Wireless Hardware & Firmware System
 
-This directory contains the firmware for the **Dual-ESP32 Architecture** of the Fibott reverse vending kiosk.
+This directory contains the firmware for the **Dual-ESP32 100% Wireless Architecture** of the Fibott reverse vending kiosk.
 
 > 📖 **Complete Installation Guide:** See [docs/HARDWARE_SETUP_GUIDE.md](../docs/HARDWARE_SETUP_GUIDE.md) for full wiring schematics, BOM, troubleshooting, and step-by-step setup.
 
@@ -9,14 +9,16 @@ This directory contains the firmware for the **Dual-ESP32 Architecture** of the 
 ## 📁 Architecture Overview
 
 ```
-┌──────────────────────────────────────┐       UART Serial (115200)      ┌──────────────────────────────────────┐
-│        ESP32 #1: ESP32-CAM           │ ── GPIO13 (TX) ──> GPIO16 (RX) ──> │     ESP32 #2: Kiosk Controller       │
-│                                      │ <── GPIO14 (RX) <── GPIO17 (TX) ── │                                      │
-│ • OV2640 Image Capture               │ ──── Common GND ───────────────> │ • SG90 / MG90S Gate Servo (GPIO18)   │
-│ • MobileNetV1 TinyML Inference       │                                  │ • Audio Buzzer (GPIO19)              │
-│ • Anti-Hand & Anti-Paper Filters     │                                  │ • Status LEDs                        │
-│ • WiFi + Cloud Backend Sync          │                                  │ • Powered with clean motor power     │
-└──────────────────────────────────────┘                                  └──────────────────────────────────────┘
+┌──────────────────────────────────────┐     2.4 GHz ESP-NOW Wireless Link     ┌──────────────────────────────────────┐
+│        ESP32 #1: ESP32-CAM           │ · · · · · · · · · · · · · · · · · · · > │     ESP32 #2: Kiosk Controller       │
+│            (Vision Node)             │       (ZERO PHYSICAL WIRING!)           │           (Actuator Node)            │
+│                                      │                                         │                                      │
+│ • OV2640 Image Capture               │                                         │ • SG90 / MG90S Gate Servo (GPIO18)   │
+│ • MobileNetV1 TinyML Inference       │                                         │ • Audio Buzzer (GPIO19)              │
+│ • Anti-Hand & Anti-Paper Filters     │                                         │ • Onboard Blue Status LED (GPIO2)    │
+│ • WiFi + Cloud Backend Sync          │                                         │ • Independent 5V Motor Power Supply  │
+│ • Independent 5V Clean Logic Power   │                                         │ • Sub-10ms Wireless Command Reaction │
+└──────────────────────────────────────┘                                         └──────────────────────────────────────┘
 ```
 
 ---
@@ -25,26 +27,25 @@ This directory contains the firmware for the **Dual-ESP32 Architecture** of the 
 
 | Folder | Target Board | Primary Responsibility |
 |:---|:---|:---|
-| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Camera capture, on-device AI classification, paper/hand rejection filters, cloud backend sync, UART command transmitter. |
-| [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, buzzer audio feedback, hardware testing. |
+| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Camera capture, on-device AI classification, paper/hand rejection filters, cloud backend sync, ESP-NOW wireless command transmitter. |
+| [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, buzzer audio feedback, ESP-NOW wireless command receiver, USB bench testing. |
 
 ---
 
 ## 🔌 Hardware Wiring Guide
 
-### 1. Inter-ESP32 UART Wiring
-| ESP32-CAM Pin | 2nd ESP32 Controller Pin | Description |
-|:---|:---|:---|
-| **GPIO13 (TX)** | **GPIO16 (RX2)** | Command line from ESP32-CAM to Controller |
-| **GPIO14 (RX)** | **GPIO17 (TX2)** | Feedback line from Controller to ESP32-CAM |
-| **GND** | **GND** | **MANDATORY Common Ground** |
+### 1. Inter-ESP32 Interconnect
+> ⚡ **NO PHYSICAL WIRES BETWEEN BOARDS!**
+> - The two ESP32 modules communicate **100% wirelessly** via Espressif ESP-NOW at 2.4 GHz.
+> - No UART TX/RX wires are needed.
+> - No common ground wire is required, keeping the camera power domain completely isolated from motor electrical spikes.
 
 ### 2. ESP32-CAM (Vision Node) Wiring
 | Pin | Connection | Note |
 |:---|:---|:---|
-| **5V / GND** | 5V 2A Power Supply | Clean power without motor noise |
-| **GPIO33** | Built-in Red LED | Activity indicator |
-| **GPIO4** | Built-in Flash LED | Chute illumination (PWM dimmed) |
+| **5V / GND** | 5V 2A Power Supply (or USB) | Clean power without motor noise |
+| **GPIO33** | Built-in Red LED | Activity indicator (internal) |
+| **GPIO4** | Built-in Flash LED | Chute illumination (PWM dimmed, internal) |
 
 ### 3. 2nd ESP32 (Actuator Node) Wiring
 | Pin | Component | Note |
@@ -52,7 +53,8 @@ This directory contains the firmware for the **Dual-ESP32 Architecture** of the 
 | **GPIO18** | **Servo Signal Wire** (Yellow/Orange) | SG90 / MG90S Gate Actuator |
 | **GPIO19** | **Buzzer (+)** | Active / Passive Buzzer |
 | **GND** | **Buzzer (-)** & Servo Ground (Brown/Black) | Ground |
-| **5V** | **Servo VCC** (Red) | Connected to 5V power supply |
+| **5V** | **Servo VCC** (Red) | Dedicated 5V power supply |
+| **GPIO2** | Built-in Blue LED | Wireless packet & status indicator (internal) |
 
 ---
 
@@ -60,7 +62,7 @@ This directory contains the firmware for the **Dual-ESP32 Architecture** of the 
 
 In earlier versions, a 2-class Softmax model guaranteed that the higher output was always ≥ 50%, causing flat paper, hands, and random objects to be accepted.
 
-In **v2.0.0**, four layers of rejection are active:
+In **v2.1.0**, four layers of rejection are active:
 
 1. **High Confidence Threshold (`0.78f`) & Margin (`0.50f`)**:
    - Random objects produce split probabilities (e.g. 55% PET / 45% CAN).
@@ -78,11 +80,11 @@ In **v2.0.0**, four layers of rejection are active:
 
 ---
 
-## 📡 UART Command Protocol
+## 📡 Wireless Command Protocol (ESP-NOW)
 
 | Command | Direction | Action on 2nd ESP32 |
 |:---|:---|:---|
-| `CMD:BOOT` | ESP32-CAM → Controller | Plays boot beep |
+| `CMD:BOOT` | ESP32-CAM → Controller | Plays boot beep + blinks status LED |
 | `CMD:READY` | ESP32-CAM → Controller | Plays prompt beep + blinks ready LED |
 | `CMD:OPEN` | ESP32-CAM → Controller | Plays accept tone (3200Hz), opens servo gate for 3s, then closes |
 | `CMD:REJECT` | ESP32-CAM → Controller | Plays 3 rapid warning beeps (1600Hz), keeps gate locked |
@@ -101,6 +103,7 @@ In **v2.0.0**, four layers of rejection are active:
 
 ### For 2nd ESP32 (Controller):
 1. Open [`firmware/kiosk-controller/kiosk-controller.ino`](./kiosk-controller/kiosk-controller.ino) in Arduino IDE.
-2. Select Board: **ESP32 Dev Module** (or your ESP32 model).
-3. Click **Upload**.
-4. Open Serial Monitor (115200 baud) — you can type `OPEN`, `CLOSE`, `REJECT`, or `BEEP` to test the hardware directly!
+2. Configure your WiFi credentials in `config.h` (connects to same AP to match Wi-Fi channel automatically).
+3. Select Board: **ESP32 Dev Module** (or your ESP32 model).
+4. Click **Upload**.
+5. Open Serial Monitor (115200 baud) — you can type `OPEN`, `CLOSE`, `REJECT`, `BEEP`, or `STATUS` to test the hardware directly!

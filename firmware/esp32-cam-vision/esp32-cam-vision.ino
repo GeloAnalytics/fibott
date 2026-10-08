@@ -1,7 +1,7 @@
 /*
  * Fibott — ESP32-CAM Vision & AI Inference Firmware
  * 
- * ── Dual-ESP32 Architecture (Vision & Cloud Node) ─────────────────────────────
+ * ── Dual-ESP32 Wireless Architecture (Vision & Cloud Node) ───────────────────
  *
  * Board:    AI Thinker ESP32-CAM  (Arduino IDE → Tools → Board)
  * PSRAM:    Tools → PSRAM → "OPI PSRAM"  (REQUIRED — camera will not init without it)
@@ -11,12 +11,12 @@
  *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
  *   - "Chirale_TensorFlowLite" (Library Manager)
  *
- * ── Hardware Interconnect Wiring to 2nd ESP32 (Kiosk Actuator Controller) ─────
- *   ESP32-CAM GPIO13 (TX)  →  2nd ESP32 GPIO16 (RX2)
- *   ESP32-CAM GPIO14 (RX)  ←  2nd ESP32 GPIO17 (TX2)
- *   ESP32-CAM GND          ──  2nd ESP32 GND (MANDATORY COMMON GROUND)
- *   ESP32-CAM GPIO33       →  Onboard red status LED (active-LOW)
- *   ESP32-CAM GPIO4        →  Onboard Flash LED (dimmed PWM for chute illumination)
+ * ── Wireless Interconnect (ZERO Physical Wiring to 2nd ESP32) ────────────────
+ *   Communication with the Kiosk Controller is 100% wireless over 2.4 GHz ESP-NOW.
+ *   - No UART TX/RX wires
+ *   - No common ground wire needed (electrically isolated power domains)
+ *   - ESP32-CAM GPIO33  →  Onboard red status LED (active-LOW)
+ *   - ESP32-CAM GPIO4   →  Onboard Flash LED (dimmed PWM for chute illumination)
  *
  * ── Rejection Capabilities ───────────────────────────────────────────────────
  *   - Strict MobileNet INT8 Confidence Threshold (>= 78% & margin >= 50%)
@@ -33,6 +33,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+#include <esp_now.h>
 
 // ── TensorFlow Lite Micro ───────────────────────────────────────────────────
 #include <Chirale_TensorFlowLite.h>
@@ -40,8 +41,17 @@
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
-// Hardware Serial link to 2nd ESP32 (Servo & Buzzer Actuator Controller)
-HardwareSerial ControllerSerial(1); // UART1 on GPIO14(RX) / GPIO13(TX)
+// ── Wireless Command Packet Struct ───────────────────────────────────────────
+typedef struct __attribute__((packed)) {
+  char magic[4];        // "FIBO"
+  uint8_t version;      // 1
+  char command[24];     // "CMD:OPEN", "CMD:REJECT", "CMD:READY", "CMD:BOOT", "CMD:ERROR"
+  uint32_t seq;         // Monotonic packet sequence counter
+} WirelessCommandPacket;
+
+static uint8_t espNowBroadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static bool espNowReady = false;
+static uint32_t packetSeqNum = 0;
 
 struct LocalClassificationResult {
   const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
@@ -127,11 +137,48 @@ static void flashOff() {
   ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
 }
 
-// ── Send Command to 2nd ESP32 Controller ─────────────────────────────────────
+// ── Wireless Setup (ESP-NOW 2.4 GHz) ──────────────────────────────────────────
+static void wirelessSetup() {
+  LOG("WIRELESS", "Initialising ESP-NOW wireless transmitter (0 physical wires)...");
+
+  if (esp_now_init() != ESP_OK) {
+    LOG("WIRELESS", "WARN: esp_now_init failed! Actuation commands will not transmit.");
+    return;
+  }
+
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, espNowBroadcastMac, 6);
+  peerInfo.channel = 0; // 0 = follow current active Wi-Fi channel
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    LOG("WIRELESS", "WARN: Failed to add ESP-NOW broadcast peer.");
+  } else {
+    espNowReady = true;
+    LOG("WIRELESS", "ESP-NOW broadcast ready (channel follows active Wi-Fi).");
+  }
+}
+
+// ── Send Command to 2nd ESP32 Controller via ESP-NOW ──────────────────────────
 static void sendControllerCmd(const char* cmd) {
-  ControllerSerial.printf("%s\n", cmd);
-  ControllerSerial.flush();
-  LOGF("UART→ACTUATOR", "%s", cmd);
+  if (!cmd || strlen(cmd) == 0) return;
+
+  LOGF("WIRELESS→ACTUATOR", "%s", cmd);
+
+  if (espNowReady) {
+    WirelessCommandPacket pkt = {};
+    memcpy(pkt.magic, WIRELESS_MAGIC, 4);
+    pkt.version = 1;
+    strncpy(pkt.command, cmd, sizeof(pkt.command) - 1);
+    pkt.seq = ++packetSeqNum;
+
+    esp_err_t res = esp_now_send(espNowBroadcastMac, (const uint8_t*)&pkt, sizeof(pkt));
+    if (res != ESP_OK) {
+      LOGF("WIRELESS", "WARN: esp_now_send failed (0x%x)", res);
+    }
+  } else {
+    LOG("WIRELESS", "WARN: ESP-NOW not initialized, command not sent over the air");
+  }
 }
 
 // ── Camera Initialization ─────────────────────────────────────────────────────
@@ -647,14 +694,11 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // Initialize HardwareSerial link to 2nd ESP32 Controller on GPIO14 (RX) & GPIO13 (TX)
-  ControllerSerial.begin(UART_TO_CONTROLLER_BAUD, SERIAL_8N1, PIN_CONTROLLER_RX, PIN_CONTROLLER_TX);
-
   Serial.println("\n");
   Serial.println("╔══════════════════════════════════════════════════╗");
   Serial.println("║   Fibott ESP32-CAM (Dedicated Vision & AI)       ║");
   Serial.printf( "║  Firmware v%-38s║\n", FIRMWARE_VERSION);
-  Serial.println("║  UART Link → 2nd ESP32 (Servo & Buzzer Actuator) ║");
+  Serial.println("║  Wireless ESP-NOW Link → Kiosk Controller (0 Wires)║");
   Serial.println("╚══════════════════════════════════════════════════╝");
   Serial.println();
 
@@ -683,11 +727,15 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    LOGF("WIFI", "Connected! IP: %s (RSSI: %d dBm)", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    LOGF("WIFI", "Connected! IP: %s (RSSI: %d dBm, Channel: %d)",
+         WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.channel());
     sendLog("INFO", "BOOT", "ESP32-CAM Vision node online", WiFi.localIP().toString().c_str());
   }
 
-  // Notify 2nd ESP32 that Vision Node has booted
+  // Initialize ESP-NOW wireless transmitter on current Wi-Fi channel
+  wirelessSetup();
+
+  // Notify 2nd ESP32 that Vision Node has booted (wirelessly!)
   sendControllerCmd("CMD:BOOT");
 
   LOG("BOOT", "Boot sequence complete — State: IDLE");
