@@ -25,9 +25,8 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 
 ## 📁 Firmware Folders
 
-| Folder | Target Board | Primary Responsibility |
-|:---|:---|:---|
-| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Camera capture, on-device AI classification, paper/hand rejection filters, cloud backend sync, ESP-NOW wireless command transmitter. |
+| [`esp32-s3-cam-ov3640/`](./esp32-s3-cam-ov3640/) | **ESP32-S3 N16R8 CAM (OV3640)** | High-performance vision node: 240MHz dual-core LX7, 8MB Octal PSRAM, OV3640 3MP sensor, vector-accelerated TinyML, multi-layer rejection engine, wireless ESP-NOW transmitter, cloud sync. |
+| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Legacy vision node: OV2640 camera capture, on-device AI classification, paper/hand rejection filters, cloud backend sync, ESP-NOW wireless command transmitter. |
 | [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, status LED feedback, ESP-NOW wireless command receiver, USB bench testing. |
 
 ---
@@ -93,7 +92,13 @@ In **v2.1.0**, four layers of rejection are active:
 
 ## 🚀 How to Flash
 
-### For ESP32-CAM:
+### For ESP32-S3 N16R8 CAM (OV3640):
+1. Open [`firmware/esp32-s3-cam-ov3640/esp32-s3-cam-ov3640.ino`](./esp32-s3-cam-ov3640/esp32-s3-cam-ov3640.ino) in Arduino IDE.
+2. Configure your WiFi credentials and Device API key in `config.h`.
+3. Select Board: **ESP32S3 Dev Module**, PSRAM: **OPI PSRAM**, Flash Size: **16MB (128Mb)**, USB CDC On Boot: **Enabled**.
+4. Connect via USB-C cable directly (no GPIO0 jumper needed on ESP32-S3!) and click **Upload**.
+
+### For Legacy ESP32-CAM:
 1. Open [`firmware/esp32-cam-vision/esp32-cam-vision.ino`](./esp32-cam-vision/esp32-cam-vision.ino) in Arduino IDE.
 2. Configure your WiFi credentials and Device API key in `config.h`.
 3. Select Board: **AI Thinker ESP32-CAM**, PSRAM: **OPI PSRAM**.
