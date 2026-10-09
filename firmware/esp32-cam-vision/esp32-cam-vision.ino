@@ -37,7 +37,7 @@
 
 // ── TensorFlow Lite Micro ───────────────────────────────────────────────────
 #include <Chirale_TensorFlowLite.h>
-#include "tensorflow/lite/micro/all_ops_resolver.h"
+#include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
@@ -495,7 +495,23 @@ static bool initLocalML() {
     return false;
   }
 
-  static tflite::AllOpsResolver resolver;
+  // Register only the MobileNetV1 INT8 required operators to minimize flash usage
+  static tflite::MicroMutableOpResolver<10> resolver;
+  static bool resolverReady = false;
+  if (!resolverReady) {
+    resolver.AddConv2D();
+    resolver.AddDepthwiseConv2D();
+    resolver.AddAveragePool2D();
+    resolver.AddFullyConnected();
+    resolver.AddSoftmax();
+    resolver.AddReshape();
+    resolver.AddQuantize();
+    resolver.AddDequantize();
+    resolver.AddPad();
+    resolver.AddAdd();
+    resolverReady = true;
+  }
+
   static tflite::MicroInterpreter staticInterpreter(
       tfliteModel, resolver, tensorArenaBuffer, MODEL_TENSOR_ARENA_SIZE);
   tfliteInterpreter = &staticInterpreter;
