@@ -1,7 +1,7 @@
 #pragma once
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Fibott Kiosk Controller (2nd ESP32: Servo Gate & Buzzer Actuator)
+// Fibott Kiosk Controller (2nd ESP32: Servo Gate Actuator)
 // config.h
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -28,12 +28,13 @@
 #define SERVO_OPEN_US   2000   // Open pulse width (~135°) — adjust for chute
 #define GATE_OPEN_MS    3000   // How long gate stays open for deposit (milliseconds)
 
-// ── Buzzer Configuration ──────────────────────────────────────────────────────
-// Connect buzzer (+) lead to GPIO19, (-) lead to GND
-#define PIN_BUZZER          19
-#define BUZZER_TYPE_ACTIVE  1
-#define BUZZER_TYPE_PASSIVE 2
-#define BUZZER_MODE         BUZZER_TYPE_ACTIVE  // Set to PASSIVE if using passive piezo
+// ── Built-in Onboard LED Configuration ───────────────────────────────────────
+// Uses the ESP32's onboard built-in LED (no external LED wiring required)
+#ifndef PIN_LED_STATUS
+  #ifdef LED_BUILTIN
+    #define PIN_LED_STATUS LED_BUILTIN
+  #else
+    #define PIN_LED_STATUS 2  // Default onboard Blue LED for ESP32 DevKit / NodeMCU-32S
+  #endif
+#endif
 
-// ── Status LED Configuration ──────────────────────────────────────────────────
-#define PIN_LED_STATUS 2  // Onboard blue LED on ESP32 DevKit (active-HIGH)

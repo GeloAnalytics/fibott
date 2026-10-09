@@ -34,10 +34,10 @@ The Fibott kiosk uses a **Dual-ESP32 Wireless Architecture** to separate high-fr
 │         (Vision Node)         │    (ZERO PHYSICAL WIRING!)        │        (Actuator Node)        │
 │                               │                                   │                               │
 │ • OV2640 Image Acquisition    │                                   │ • SG90/MG90S Servo Gate       │
-│ • MobileNetV1 TinyML in PSRAM │                                   │ • Audio Feedback Buzzer       │
-│ • Skin / Paper / Clutter Stop │                                   │ • Status LED Indicators       │
-│ • WiFi + Cloud Sync (Vercel)  │                                   │ • Dedicated Motor Power       │
-│ • Sub-10ms ESP-NOW Broadcast  │                                   │ • Sub-10ms Wireless Receiver  │
+│ • MobileNetV1 TinyML in PSRAM │                                   │ • Status LED Indicators       │
+│ • Skin / Paper / Clutter Stop │                                   │ • Dedicated Motor Power       │
+│ • WiFi + Cloud Sync (Vercel)  │                                   │ • Sub-10ms Wireless Receiver  │
+│ • Sub-10ms ESP-NOW Broadcast  │                                   │                               │
 └───────────────────────────────┘                                   └───────────────────────────────┘
 ```
 
@@ -53,11 +53,10 @@ The Fibott kiosk uses a **Dual-ESP32 Wireless Architecture** to separate high-fr
 | Item | Specification | Quantity | Purpose |
 |:---|:---|:---|:---|
 | **ESP32-CAM** | AI-Thinker module with OV2640 camera & PSRAM | 1 | Image capture & on-device AI inference |
-| **ESP32 DevKit** | Standard 30-pin or 38-pin ESP32 NodeMCU / WROOM-32 | 1 | Servo & buzzer actuator controller |
+| **ESP32 DevKit** | Standard 30-pin or 38-pin ESP32 NodeMCU / WROOM-32 | 1 | Servo gate actuator controller |
 | **Servo Motor** | SG90 (plastic gear) or MG90S (metal gear, recommended) | 1 | Chute trapdoor / gate mechanism |
-| **Buzzer** | 5V Active Piezo Buzzer (or 2-pin passive buzzer) | 1 | Audio feedback for user interaction |
 | **Power Supply** | 5V DC 2.0A–3.0A power adapters or dual USB supplies | 1–2 | Clean power for logic and dedicated motor power |
-| **Jumper Wires** | Female-to-Female Dupont wires | ~6 | Actuator & buzzer wiring on 2nd ESP32 |
+| **Jumper Wires** | Female-to-Female Dupont wires | ~4 | Actuator wiring on 2nd ESP32 |
 | **USB Cables / FTDI**| Micro-USB cable (or FTDI programmer for ESP32-CAM) | 1–2 | Firmware flashing and serial debugging |
 
 ---
@@ -81,9 +80,8 @@ The Fibott kiosk uses a **Dual-ESP32 Wireless Architecture** to separate high-fr
 | Pin | Connect To | Description |
 |:---|:---|:---|
 | **VIN / 5V** | 5V Power Supply (+) | Board power |
-| **GND** | Power Supply (-) & Servo Ground & Buzzer (-) | Ground |
+| **GND** | Power Supply (-) & Servo Ground | Ground |
 | **GPIO18** | **Servo Signal** (Orange / Yellow wire) | 50Hz PWM Servo signal |
-| **GPIO19** | **Buzzer (+)** (Long lead / red wire) | Audio signal |
 | **5V Rail** | **Servo Power** (Red wire) | Dedicated 5V power to servo motor |
 | **GPIO2** | Internal | Built-in Blue Status & Packet LED |
 
@@ -144,7 +142,6 @@ Open [`firmware/kiosk-controller/config.h`](file:///c:/Users/PC/Fibott/firmware/
 
 #define PIN_SERVO       18
 #define GATE_OPEN_MS    3000
-#define PIN_BUZZER      19
 ```
 
 > 🔑 **Where to get `DEVICE_API_KEY`:**
@@ -187,12 +184,12 @@ Open [`firmware/kiosk-controller/config.h`](file:///c:/Users/PC/Fibott/firmware/
 ## 7. Testing & Verification Workflow
 
 ### Step 1: Standalone Hardware Test (Bench Test)
-You can test the servo and buzzer on the 2nd ESP32 immediately without the camera!
+You can test the servo gate on the 2nd ESP32 immediately without the camera!
 1. Open Serial Monitor on the 2nd ESP32 port at **115200 baud**.
 2. Type these commands into the input bar and press Enter:
-   - `OPEN` ➔ Servo opens for 3 seconds, plays success chime, then closes.
-   - `REJECT` ➔ Plays 3 rapid warning beeps.
-   - `BEEP` ➔ Tests the buzzer.
+   - `OPEN` ➔ Servo opens for 3 seconds, then closes.
+   - `CLOSE` ➔ Forces servo gate closed.
+   - `REJECT` ➔ Rejection sequence (flashes reject LED, keeps gate locked).
    - `STATUS` ➔ Displays pin status, channel, and firmware version.
 
 ### Step 2: Wireless ESP-NOW Link Test

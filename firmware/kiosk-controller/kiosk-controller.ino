@@ -1,5 +1,5 @@
 /*
- * Fibott — 2nd ESP32 Kiosk Controller (Servo Gate & Buzzer Actuator)
+ * Fibott — 2nd ESP32 Kiosk Controller (Servo Gate Actuator)
  *
  * Board:    ESP32 Dev Module / NodeMCU-32S / ESP32 WROOM-32
  *
@@ -11,15 +11,13 @@
  * ── Actuator Pinout ─────────────────────────────────────────────────────────
  *   GPIO18  →  Servo Signal Wire (SG90 / MG90S Gate Actuator)
  *   5V Rail →  Servo VCC (Red wire, dedicated 5V power)
- *   GND     →  Servo GND (Brown/Black wire) & Buzzer (-) lead
- *   GPIO19  →  Buzzer (+) / Signal Lead
- *   GPIO2   →  Onboard Blue Status LED
+ *   GND     →  Servo GND (Brown/Black wire)
+ *   Internal→  Built-in Onboard Blue LED (LED_BUILTIN / GPIO2, no wiring needed)
  *
  * ── Functionality ───────────────────────────────────────────────────────────
  *   1. Listens for wireless ESP-NOW commands from ESP32-CAM (sub-10ms latency).
  *   2. Opens/closes the servo gate with non-blocking timing.
- *   3. Plays audio feedback for Boot, Ready, Accepted, and Rejected deposits.
- *   4. Allows interactive testing via USB Serial Monitor (commands: OPEN, CLOSE, BEEP, REJECT).
+ *   3. Allows interactive testing via USB Serial Monitor (commands: OPEN, CLOSE, REJECT).
  */
 
 #include "config.h"
@@ -82,71 +80,6 @@ static void gateOpen() {
   servoWrite(SERVO_OPEN_US);
 }
 
-// ── Buzzer Driver ─────────────────────────────────────────────────────────────
-#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
-static void buzzerPwmSetup() {
-  ledc_timer_config_t tc = {};
-  tc.speed_mode      = LEDC_LOW_SPEED_MODE;
-  tc.duty_resolution = LEDC_TIMER_10_BIT;
-  tc.timer_num       = LEDC_TIMER_1;
-  tc.freq_hz         = 2000;
-  tc.clk_cfg         = LEDC_AUTO_CLK;
-  ledc_timer_config(&tc);
-
-  ledc_channel_config_t cc = {};
-  cc.gpio_num   = PIN_BUZZER;
-  cc.speed_mode = LEDC_LOW_SPEED_MODE;
-  cc.channel    = LEDC_CHANNEL_1;
-  cc.intr_type  = LEDC_INTR_DISABLE;
-  cc.timer_sel  = LEDC_TIMER_1;
-  cc.duty       = 0;
-  cc.hpoint     = 0;
-  ledc_channel_config(&cc);
-}
-
-static void buzzerTone(uint32_t freqHz) {
-  if (freqHz == 0) {
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-    return;
-  }
-  ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_1, freqHz);
-  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 512);
-  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-}
-
-static void buzzerNoTone() {
-  ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-  ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-}
-#endif
-
-static void buzzerSetup() {
-  pinMode(PIN_BUZZER, OUTPUT);
-#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
-  buzzerPwmSetup();
-  buzzerNoTone();
-#else
-  digitalWrite(PIN_BUZZER, LOW);
-#endif
-  LOG("BUZZER", "Buzzer ready on GPIO" String(PIN_BUZZER));
-}
-
-static void playBeep(int count, int onMs = 150, int gapMs = 100, uint32_t freqHz = 2500) {
-  for (int i = 0; i < count; i++) {
-#if BUZZER_MODE == BUZZER_TYPE_PASSIVE
-    buzzerTone(freqHz);
-    delay(onMs);
-    buzzerNoTone();
-#else
-    digitalWrite(PIN_BUZZER, HIGH);
-    delay(onMs);
-    digitalWrite(PIN_BUZZER, LOW);
-#endif
-    if (i < count - 1) delay(gapMs);
-  }
-}
-
 // ── Status LED ────────────────────────────────────────────────────────────────
 static void ledOn()  { digitalWrite(PIN_LED_STATUS, HIGH); }
 static void ledOff() { digitalWrite(PIN_LED_STATUS, LOW);  }
@@ -160,19 +93,16 @@ static void flashLed(int times, int onMs = 120, int offMs = 100) {
 
 // ── Gate Cycle Execution ──────────────────────────────────────────────────────
 static void executeDepositAcceptCycle() {
-  LOG("ACTUATOR", "🌟 Deposit ACCEPTED — Opening gate & playing chime");
-  
-  // 1. Success Chime (High tone)
-  playBeep(1, 280, 0, 3200);
+  LOG("ACTUATOR", "🌟 Deposit ACCEPTED — Opening gate");
 
-  // 2. Open Gate Servo
+  // 1. Open Gate Servo
   ledOn();
   gateOpen();
 
-  // 3. Hold gate open for configured duration
+  // 2. Hold gate open for configured duration
   delay(GATE_OPEN_MS);
 
-  // 4. Close Gate Servo
+  // 3. Close Gate Servo
   gateClose();
   ledOff();
   LOG("ACTUATOR", "🔒 Gate closed — Ready for next item");
@@ -180,9 +110,7 @@ static void executeDepositAcceptCycle() {
 
 static void executeDepositRejectCycle() {
   LOG("ACTUATOR", "🚫 Deposit REJECTED — Gate stays LOCKED");
-  
-  // 3 rapid warning beeps
-  playBeep(3, 110, 80, 1600);
+  flashLed(3, 110, 80);
   gateClose();
 }
 
@@ -200,28 +128,23 @@ static void handleCommand(String cmd) {
     executeDepositRejectCycle();
   }
   else if (cmd == "CMD:READY" || cmd == "READY") {
-    LOG("ACTUATOR", "Session active — Prompting user");
-    playBeep(1, 100, 0, 2800);
+    LOG("ACTUATOR", "Session active — Ready");
     flashLed(2, 120, 100);
   }
   else if (cmd == "CMD:BOOT" || cmd == "BOOT") {
     LOG("ACTUATOR", "ESP32-CAM booted successfully (wireless ping)");
-    playBeep(1, 80, 0, 2400);
     flashLed(1, 200, 0);
   }
   else if (cmd == "CMD:ERROR" || cmd == "ERROR") {
     LOG("ACTUATOR", "Error notification received from camera");
-    playBeep(1, 400, 0, 1000);
+    flashLed(4, 100, 100);
   }
   else if (cmd == "CLOSE") {
     gateClose();
   }
-  else if (cmd == "BEEP") {
-    playBeep(2, 100, 80, 2500);
-  }
   else if (cmd == "STATUS") {
-    Serial.printf("[STATUS  ] Firmware: %s | Servo: GPIO%d | Buzzer: GPIO%d | Channel: %d | MAC: %s\n",
-                  FIRMWARE_VERSION, PIN_SERVO, PIN_BUZZER, WiFi.channel(), WiFi.macAddress().c_str());
+    Serial.printf("[STATUS  ] Firmware: %s | Servo: GPIO%d | Channel: %d | MAC: %s\n",
+                  FIRMWARE_VERSION, PIN_SERVO, WiFi.channel(), WiFi.macAddress().c_str());
   }
   else {
     LOGF("WARN", "Unknown command: '%s'", cmd.c_str());
@@ -300,19 +223,17 @@ void setup() {
   Serial.println("║   Fibott 2nd ESP32 Kiosk Actuator Controller    ║");
   Serial.printf( "║  Firmware v%-38s║\n", FIRMWARE_VERSION);
   Serial.println("║  Wireless ESP-NOW Receiver (0 Physical Wires)    ║");
-  Serial.println("║  Servo Gate (GPIO18) | Buzzer (GPIO19)           ║");
+  Serial.println("║  Servo Gate (GPIO18)                             ║");
   Serial.println("╚══════════════════════════════════════════════════╝");
   Serial.println();
 
   pinMode(PIN_LED_STATUS, OUTPUT);
   ledOff();
 
-  buzzerSetup();
   servoSetup();
   gateClose();
 
-  // Boot chime
-  playBeep(1, 100, 0, 2600);
+  // Boot indicator
   flashLed(2, 100, 80);
 
   // Initialize Wireless ESP-NOW
@@ -320,7 +241,7 @@ void setup() {
 
   LOG("BOOT", "Kiosk Actuator Controller Ready!");
   LOG("BOOT", "Listening for ESP-NOW wireless commands (CMD:OPEN, CMD:REJECT, CMD:READY)...");
-  LOG("BOOT", "Type 'OPEN', 'CLOSE', 'REJECT', or 'BEEP' in Serial Monitor for manual test.");
+  LOG("BOOT", "Type 'OPEN', 'CLOSE', or 'REJECT' in Serial Monitor for manual test.");
 }
 
 // ── Main Loop ─────────────────────────────────────────────────────────────────

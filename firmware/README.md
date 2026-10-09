@@ -14,10 +14,10 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 │            (Vision Node)             │       (ZERO PHYSICAL WIRING!)           │           (Actuator Node)            │
 │                                      │                                         │                                      │
 │ • OV2640 Image Capture               │                                         │ • SG90 / MG90S Gate Servo (GPIO18)   │
-│ • MobileNetV1 TinyML Inference       │                                         │ • Audio Buzzer (GPIO19)              │
-│ • Anti-Hand & Anti-Paper Filters     │                                         │ • Onboard Blue Status LED (GPIO2)    │
-│ • WiFi + Cloud Backend Sync          │                                         │ • Independent 5V Motor Power Supply  │
-│ • Independent 5V Clean Logic Power   │                                         │ • Sub-10ms Wireless Command Reaction │
+│ • MobileNetV1 TinyML Inference       │                                         │ • Onboard Blue Status LED (GPIO2)    │
+│ • Anti-Hand & Anti-Paper Filters     │                                         │ • Independent 5V Motor Power Supply  │
+│ • WiFi + Cloud Backend Sync          │                                         │ • Sub-10ms Wireless Command Reaction │
+│ • Independent 5V Clean Logic Power   │                                         │                                      │
 └──────────────────────────────────────┘                                         └──────────────────────────────────────┘
 ```
 
@@ -28,7 +28,7 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 | Folder | Target Board | Primary Responsibility |
 |:---|:---|:---|
 | [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Camera capture, on-device AI classification, paper/hand rejection filters, cloud backend sync, ESP-NOW wireless command transmitter. |
-| [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, buzzer audio feedback, ESP-NOW wireless command receiver, USB bench testing. |
+| [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, status LED feedback, ESP-NOW wireless command receiver, USB bench testing. |
 
 ---
 
@@ -51,8 +51,7 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 | Pin | Component | Note |
 |:---|:---|:---|
 | **GPIO18** | **Servo Signal Wire** (Yellow/Orange) | SG90 / MG90S Gate Actuator |
-| **GPIO19** | **Buzzer (+)** | Active / Passive Buzzer |
-| **GND** | **Buzzer (-)** & Servo Ground (Brown/Black) | Ground |
+| **GND** | **Servo Ground** (Brown/Black) | Ground |
 | **5V** | **Servo VCC** (Red) | Dedicated 5V power supply |
 | **GPIO2** | Built-in Blue LED | Wireless packet & status indicator (internal) |
 
@@ -84,11 +83,11 @@ In **v2.1.0**, four layers of rejection are active:
 
 | Command | Direction | Action on 2nd ESP32 |
 |:---|:---|:---|
-| `CMD:BOOT` | ESP32-CAM → Controller | Plays boot beep + blinks status LED |
-| `CMD:READY` | ESP32-CAM → Controller | Plays prompt beep + blinks ready LED |
-| `CMD:OPEN` | ESP32-CAM → Controller | Plays accept tone (3200Hz), opens servo gate for 3s, then closes |
-| `CMD:REJECT` | ESP32-CAM → Controller | Plays 3 rapid warning beeps (1600Hz), keeps gate locked |
-| `CMD:ERROR` | ESP32-CAM → Controller | Plays error buzz (1000Hz) |
+| `CMD:BOOT` | ESP32-CAM → Controller | Blinks status LED |
+| `CMD:READY` | ESP32-CAM → Controller | Blinks ready LED pattern |
+| `CMD:OPEN` | ESP32-CAM → Controller | Opens servo gate for 3s, then closes |
+| `CMD:REJECT` | ESP32-CAM → Controller | Flashes reject LED pattern, keeps gate locked |
+| `CMD:ERROR` | ESP32-CAM → Controller | Flashes error LED pattern |
 
 ---
 
@@ -106,4 +105,4 @@ In **v2.1.0**, four layers of rejection are active:
 2. Configure your WiFi credentials in `config.h` (connects to same AP to match Wi-Fi channel automatically).
 3. Select Board: **ESP32 Dev Module** (or your ESP32 model).
 4. Click **Upload**.
-5. Open Serial Monitor (115200 baud) — you can type `OPEN`, `CLOSE`, `REJECT`, `BEEP`, or `STATUS` to test the hardware directly!
+5. Open Serial Monitor (115200 baud) — you can type `OPEN`, `CLOSE`, `REJECT`, or `STATUS` to test the hardware directly!

@@ -66,17 +66,7 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 | Firmware Folder | Target Hardware | Primary Role | Description |
 |---|---|---|---|
 | [`firmware/esp32-cam-vision/`](../firmware/esp32-cam-vision/) | AI-Thinker ESP32-CAM | Camera & On-Device AI | OV2640 camera capture, MobileNetV1 TinyML inference in PSRAM, hand/paper reject filters, cloud backend sync, **ESP-NOW 2.4 GHz wireless command transmitter (0 physical wires to 2nd ESP32)**. |
-| [`firmware/kiosk-controller/`](../firmware/kiosk-controller/) | Standard ESP32 DevKit | Gate & Audio Actuator | SG90/MG90S Gate Servo on **GPIO18**, Buzzer on **GPIO19**, Status LED on **GPIO2**, **ESP-NOW 2.4 GHz wireless command receiver**, USB Serial Monitor bench testing. |
-
-### Audible Feedback Protocol (Buzzer)
-
-| State / Event | Beep Pattern | Frequency (Passive Mode) |
-|---|---|---|
-| **Boot Complete** | 1 short beep (80ms) | 2400–2600 Hz |
-| **Session Active / Ready** | 1 prompt beep (100ms) + LED flash | 2800–3000 Hz |
-| **Deposit Accepted** | 1 long chime (280ms) + Gate opens 3s | 3200–3500 Hz |
-| **Deposit Rejected** | 3 rapid warning beeps (110ms each) | 1600–1800 Hz |
-| **Upload / System Error** | 1 low warning buzz (400ms) | 1000–1200 Hz |
+| [`firmware/kiosk-controller/`](../firmware/kiosk-controller/) | Standard ESP32 DevKit | Gate Actuator | SG90/MG90S Gate Servo on **GPIO18**, Status LED on **GPIO2**, **ESP-NOW 2.4 GHz wireless command receiver**, USB Serial Monitor bench testing. |
 
 ---
 
@@ -86,7 +76,7 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 - **Actuator Node:** Standard ESP32 DevKit / NodeMCU-32S / ESP32 WROOM-32.
 - **Interconnect:** **100% Wireless via Espressif ESP-NOW (2.4 GHz, sub-10ms latency). Zero physical wiring between boards.**
 - **Gate Actuator:** SG90 / MG90S Micro Servo driven via ESP32 `ledc` PWM on **GPIO18** of the Actuator Node.
-- **Audible Alerts:** 5V Active or Passive piezo buzzer connected to **GPIO19** and **GND** of the Actuator Node.
+- **Status LED:** Onboard LED on **GPIO2** for visual state and wireless packet reception feedback.
 - **Power Supply:** 5V 2A+ DC supplies (clean logic power for camera, dedicated power for motor to ensure complete electrical isolation).
 
 ---

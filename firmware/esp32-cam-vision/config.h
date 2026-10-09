@@ -6,7 +6,7 @@
 //
 // In this wireless architecture:
 //   - ESP32-CAM is DEDICATED to Camera + TinyML + Cloud Sync.
-//   - The Servo Gate and Buzzer are driven by the secondary ESP32 (Kiosk Controller).
+//   - The Servo Gate is driven by the secondary ESP32 (Kiosk Controller).
 //   - ESP32-CAM sends trigger commands (CMD:OPEN, CMD:REJECT, CMD:READY, etc.)
 //     wirelessly via 2.4 GHz ESP-NOW with ZERO physical wiring between boards.
 // ═══════════════════════════════════════════════════════════════════════════════
