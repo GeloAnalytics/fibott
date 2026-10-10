@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 import { classifyImage } from "@/lib/classifier";
 import { processDeposit } from "@/lib/deposit";
+import { logSystemEvent } from "@/lib/logger";
 import type { MaterialType } from "@/generated/prisma/enums";
 
 // sharp (used by classifyImage) needs the Node.js runtime, not edge.
@@ -194,6 +195,27 @@ export async function POST(req: Request) {
       classificationLabel: classification.label,
       confidence: classification.confidence,
       imageUrl: imageDataUrl,
+    });
+
+    // Automatically record reading and deposit verdict in SystemLog so it is visible in Admin
+    await logSystemEvent({
+      source: "HARDWARE",
+      level: result.decision === "ACCEPT" ? "INFO" : "WARN",
+      tag: "ESP32_VISION",
+      message: `Vision Reading: ${result.decision === "ACCEPT" ? "ACCEPTED" : "REJECTED"} ${classification.materialType} (${(classification.confidence * 100).toFixed(1)}%)`,
+      details: {
+        decision: result.decision,
+        materialType: classification.materialType,
+        confidence: classification.confidence,
+        label: classification.label,
+        sessionId,
+        sessionCode,
+        deviceId: device.id,
+        deviceName: device.name,
+        reason: result.decision === "REJECT" ? (result as { reason?: string }).reason : undefined,
+        depositId: (result as { depositId?: string }).depositId,
+      },
+      deviceId: device.id,
     });
 
     return NextResponse.json({

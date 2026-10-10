@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { validateDeviceApiKey, DeviceAuthError } from "@/lib/device-auth";
 import { processDeposit } from "@/lib/deposit";
+import { logSystemEvent } from "@/lib/logger";
 
 const schema = z.object({
   sessionCode: z.string().length(6).optional(),
@@ -43,6 +44,27 @@ export async function POST(req: Request) {
       classificationLabel: parsed.data.classificationLabel,
       confidence: parsed.data.confidence,
       imageUrl: parsed.data.imageUrl,
+    });
+
+    // Record scan reading and verdict in SystemLog so it is visible in Admin
+    await logSystemEvent({
+      source: "HARDWARE",
+      level: result.decision === "ACCEPT" ? "INFO" : "WARN",
+      tag: "ESP32_SCAN",
+      message: `ESP32 Scan: ${result.decision === "ACCEPT" ? "ACCEPTED" : "REJECTED"} ${parsed.data.materialType} [${parsed.data.classificationLabel}] (${(parsed.data.confidence * 100).toFixed(1)}%)`,
+      details: {
+        decision: result.decision,
+        materialType: parsed.data.materialType,
+        classificationLabel: parsed.data.classificationLabel,
+        confidence: parsed.data.confidence,
+        sessionId: parsed.data.sessionId,
+        sessionCode: parsed.data.sessionCode,
+        deviceId: device.id,
+        deviceName: device.name,
+        reason: result.decision === "REJECT" ? (result as { reason?: string }).reason : undefined,
+        depositId: (result as { depositId?: string }).depositId,
+      },
+      deviceId: device.id,
     });
 
     const servoAction = result.decision === "ACCEPT" ? "ACCEPT" : "REJECT";

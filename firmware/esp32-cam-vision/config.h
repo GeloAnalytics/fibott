@@ -17,15 +17,15 @@
 // ── Strict Local ML Inference & Rejection Configuration ─────────────────────
 // 3-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN, 2=NOT_BOTTLE_OR_CAN
 // The model was trained on real ESP32-CAM images from the Dataset/ folder.
-// A high confidence threshold ensures borderline items are still rejected.
-// No margin threshold needed — the 3rd class directly absorbs all non-recyclables.
-#define ML_CONFIDENCE_THRESHOLD 0.70f   // Winning class must score >= 70%
-#define ML_NOT_CLASS_THRESHOLD  0.50f   // If NOT_BOTTLE_OR_CAN > 50% -> instant reject
+// Balanced thresholds ensure genuine bottles and cans are accepted without false rejections.
+#define ML_CONFIDENCE_THRESHOLD 0.48f   // Winning recyclable class must score >= 48%
+#define ML_NOT_CLASS_THRESHOLD  0.60f   // If NOT_BOTTLE_OR_CAN > 60% and dominates -> reject
 
 // ── Smart Anti-False-Positive Heuristic Filters ───────────────────────────────
 #define FILTER_ENABLE_HAND_DETECTION  true  // Detect human skin tones in chute
 #define FILTER_ENABLE_PAPER_DETECTION true  // Detect flat white/paper sheets
 #define FILTER_ENABLE_EMPTY_CHUTE     true  // Detect blank/empty dark chute
+#define INSERTION_SETTLE_MS           2500  // Give user 2.5s to insert item before first capture
 
 // ── Camera Capture Resolution ─────────────────────────────────────────────────
 #define CAPTURE_FRAMESIZE  FRAMESIZE_QVGA
@@ -33,7 +33,7 @@
 #define CAPTURE_HEIGHT     240
 
 // ── Flash LED Brightness ──────────────────────────────────────────────────────
-#define FLASH_BRIGHTNESS   0.50f  // 50% PWM brightness to prevent overexposure
+#define FLASH_BRIGHTNESS   0.25f  // 25% PWM brightness to prevent overexposure & specular glare
 
 // ── WiFi Configuration ────────────────────────────────────────────────────────
 #define WIFI_SSID     "Fibott"

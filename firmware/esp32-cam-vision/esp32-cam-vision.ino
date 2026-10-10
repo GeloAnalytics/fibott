@@ -55,12 +55,16 @@ static uint32_t packetSeqNum = 0;
 
 struct LocalClassificationResult {
   const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
-  const char* rejectReason; // "not_bottle_or_can", "low_confidence", "hand_detected", etc.
+  const char* rejectReason; // "not_bottle_or_can", "low_confidence", "hand_detected", "empty_chute", etc.
   float petProb;
   float canProb;
   float notProb;   // probability for NOT_BOTTLE_OR_CAN class
   float confidence;
   bool isConfident;
+  float avgBrightness;
+  float avgColorDiff;
+  float skinRatio;
+  unsigned long elapsedMs;
 };
 
 // ── Serial diagnostic macros ──────────────────────────────────────────────────
@@ -265,6 +269,67 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   client.stop();
 }
 
+// ── Telemetry: Send Real-Time Vision & Sensor Reading to Backend ─────────────
+static void sendReadingTelemetry(const LocalClassificationResult &res, const char* sessionId) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(6000);
+
+  if (!client.connect(BACKEND_HOST, BACKEND_PORT)) {
+    LOG("TELEMETRY", "WARN: Backend connect failed for reading log");
+    return;
+  }
+
+  char msgBuf[128];
+  if (res.isConfident) {
+    snprintf(msgBuf, sizeof(msgBuf), "Vision: ACCEPTED %s (%.1f%%) in %lums",
+             res.materialType, res.confidence * 100.0f, res.elapsedMs);
+  } else {
+    snprintf(msgBuf, sizeof(msgBuf), "Vision: REJECTED [%s] (conf: %.1f%%) in %lums",
+             (res.rejectReason && strlen(res.rejectReason) > 0) ? res.rejectReason : "unknown",
+             res.confidence * 100.0f, res.elapsedMs);
+  }
+
+  char detailsBuf[384];
+  snprintf(detailsBuf, sizeof(detailsBuf),
+           "{\"decision\":\"%s\",\"materialType\":\"%s\",\"confidence\":%.3f,\"reason\":\"%s\","
+           "\"petProb\":%.3f,\"canProb\":%.3f,\"notProb\":%.3f,"
+           "\"brightness\":%.1f,\"colorDiff\":%.1f,\"skinRatio\":%.3f,"
+           "\"latencyMs\":%lu,\"sessionId\":\"%s\"}",
+           res.isConfident ? "ACCEPT" : "REJECT",
+           res.materialType ? res.materialType : "REJECTED",
+           res.confidence,
+           (res.rejectReason && strlen(res.rejectReason) > 0) ? res.rejectReason : "none",
+           res.petProb, res.canProb, res.notProb,
+           res.avgBrightness, res.avgColorDiff, res.skinRatio,
+           res.elapsedMs,
+           (sessionId && strlen(sessionId) > 0) ? sessionId : "");
+
+  JsonDocument doc;
+  doc["level"]   = res.isConfident ? "INFO" : "WARN";
+  doc["tag"]     = "ESP32_VISION";
+  doc["message"] = msgBuf;
+  doc["details"] = detailsBuf;
+
+  String body;
+  serializeJson(doc, body);
+
+  client.printf("POST %s HTTP/1.1\r\n", PATH_LOGS);
+  client.printf("Host: %s\r\n", BACKEND_HOST);
+  client.printf("x-device-api-key: %s\r\n", DEVICE_API_KEY);
+  client.printf("Content-Type: application/json\r\n");
+  client.printf("Content-Length: %u\r\n", (unsigned)body.length());
+  client.printf("Connection: close\r\n\r\n");
+  client.print(body);
+  client.flush();
+
+  String statusLine = client.readStringUntil('\n');
+  LOGF("TELEMETRY", "Reading logged -> %s", statusLine.c_str());
+  client.stop();
+}
+
 // ── Fast Reject Notification to App ──────────────────────────────────────────
 static void sendRejectResult(const char *sessionId, const char *reasonLabel, float confidence) {
   if (WiFi.status() != WL_CONNECTED || !sessionId || strlen(sessionId) == 0) return;
@@ -353,13 +418,9 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
 // ── Frame Capture ─────────────────────────────────────────────────────────────
 static camera_fb_t* captureImage() {
-  LOG("CAMERA", "Illuminating chute and capturing frame...");
+  LOG("CAMERA", "Illuminating chute and capturing single frame...");
   flashOn();
   delay(60);
-
-  // Grab warm-up frame for auto-exposure convergence
-  camera_fb_t *warm = esp_camera_fb_get();
-  if (warm) esp_camera_fb_return(warm);
 
   camera_fb_t *fb = esp_camera_fb_get();
   flashOff();
@@ -592,33 +653,41 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   float avgBrightness = sampleCount > 0 ? (float)totalBrightness / sampleCount : 0.0f;
   float avgColorDiff = sampleCount > 0 ? (float)totalColorDiff / sampleCount : 0.0f;
 
+  res.avgBrightness = avgBrightness;
+  res.avgColorDiff  = avgColorDiff;
+  res.skinRatio     = skinRatio;
+
   LOGF("FILTER", "Scene stats: Brightness=%.1f, ColorDiff=%.1f, SkinRatio=%.1f%%",
        avgBrightness, avgColorDiff, skinRatio * 100.0f);
 
-  // Rejection check: Non-bottle/non-can skin-like or organic feature
-  if (FILTER_ENABLE_HAND_DETECTION && skinRatio > 0.16f) {
-    LOGF("FILTER", "🚫 REJECTED: Non-bottle/can organic object detected (%.1f%%)", skinRatio * 100.0f);
+  // Rejection check: Human Hand detection (requires >38% skin tone area to avoid false triggers on red labels)
+  if (FILTER_ENABLE_HAND_DETECTION && skinRatio > 0.38f) {
+    LOGF("FILTER", "🚫 REJECTED: Human hand detected in chute (%.1f%%)", skinRatio * 100.0f);
     res.materialType = "REJECTED";
-    res.rejectReason = "not_bottle_or_can";
+    res.rejectReason = "hand_detected";
     res.confidence = skinRatio;
+    res.elapsedMs = millis() - startMs;
     return res;
   }
 
-  // Rejection check: Flat non-bottle/non-can sheet (paper, cardboard, tissue, flat packaging)
-  if (FILTER_ENABLE_PAPER_DETECTION && avgBrightness > 155.0f && avgColorDiff < 7.5f) {
-    LOGF("FILTER", "🚫 REJECTED: Non-bottle/can flat material detected (Brightness=%.1f)", avgBrightness);
+  // Rejection check: Flat non-recyclable sheet (very bright, pure white/gray with near zero color difference)
+  if (FILTER_ENABLE_PAPER_DETECTION && avgBrightness > 185.0f && avgColorDiff < 4.0f) {
+    LOGF("FILTER", "🚫 REJECTED: Flat paper/tissue detected (Brightness=%.1f, ColorDiff=%.1f)",
+         avgBrightness, avgColorDiff);
     res.materialType = "REJECTED";
-    res.rejectReason = "not_bottle_or_can";
+    res.rejectReason = "paper_detected";
     res.confidence = 0.90f;
+    res.elapsedMs = millis() - startMs;
     return res;
   }
 
-  // Rejection check: Empty chute / no object placed
-  if (FILTER_ENABLE_EMPTY_CHUTE && avgBrightness < 22.0f) {
-    LOGF("FILTER", "🚫 REJECTED: Empty chute / no bottle or can detected (Brightness=%.1f)", avgBrightness);
+  // Check: Empty chute / no object placed (dark empty chamber)
+  if (FILTER_ENABLE_EMPTY_CHUTE && avgBrightness < 20.0f) {
+    LOGF("FILTER", "🚫 EMPTY CHUTE: No bottle or can detected (Brightness=%.1f)", avgBrightness);
     res.materialType = "REJECTED";
-    res.rejectReason = "not_bottle_or_can";
+    res.rejectReason = "empty_chute";
     res.confidence = 0.90f;
+    res.elapsedMs = millis() - startMs;
     return res;
   }
 
@@ -645,7 +714,8 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   // 4. Run MobileNetV1 Inference
   if (tfliteInterpreter->Invoke() != kTfLiteOk) {
     LOG("TINYML", "ERROR: Invoke() failed");
-    res.rejectReason = "not_bottle_or_can";
+    res.rejectReason = "ml_invoke_failed";
+    res.elapsedMs = millis() - startMs;
     return res;
   }
 
@@ -658,13 +728,13 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   res.canProb = ((float)canRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
   res.notProb = ((float)notRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
 
-  unsigned long elapsedMs = millis() - startMs;
+  res.elapsedMs = millis() - startMs;
   LOGF("TINYML", "Inference in %lums | PET=%.2f CAN=%.2f NOT=%.2f",
-       elapsedMs, res.petProb, res.canProb, res.notProb);
+       res.elapsedMs, res.petProb, res.canProb, res.notProb);
 
-  // STAGE 1: Fast reject if model is confident this is NOT a bottle or can
-  if (res.notProb >= ML_NOT_CLASS_THRESHOLD) {
-    LOGF("TINYML", "REJECTED: model says NOT_BOTTLE_OR_CAN (%.2f)", res.notProb);
+  // STAGE 1: Fast reject only if model strongly identifies NOT_BOTTLE_OR_CAN and dominates
+  if (res.notProb >= ML_NOT_CLASS_THRESHOLD && res.notProb > res.petProb && res.notProb > res.canProb) {
+    LOGF("TINYML", "REJECTED: NOT_BOTTLE_OR_CAN dominates (%.2f)", res.notProb);
     res.materialType = "REJECTED";
     res.rejectReason = "not_bottle_or_can";
     res.confidence   = res.notProb;
@@ -672,7 +742,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  // STAGE 2: Pick winning class between PET_BOTTLE and ALUMINUM_CAN
+  // STAGE 2: Pick winning recyclable class between PET_BOTTLE and ALUMINUM_CAN
   if (res.canProb > res.petProb) {
     res.materialType = "ALUMINUM_CAN";
     res.confidence   = res.canProb;
@@ -681,16 +751,17 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     res.confidence   = res.petProb;
   }
 
-  // STAGE 3: Confidence gate — winner must still clear the threshold
-  res.isConfident = (res.confidence >= ML_CONFIDENCE_THRESHOLD);
-
-  if (!res.isConfident) {
-    LOGF("TINYML", "REJECTED: low confidence %.2f (threshold %.2f)",
-         res.confidence, ML_CONFIDENCE_THRESHOLD);
-    res.materialType = "REJECTED";
-    res.rejectReason = "not_bottle_or_can";
+  // STAGE 3: Accept if the recyclable class meets the confidence floor and is not dominated by NOT class
+  if (res.confidence >= ML_CONFIDENCE_THRESHOLD && res.confidence >= res.notProb) {
+    res.isConfident = true;
+    res.rejectReason = "";
+    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f vs notProb=%.2f)", res.materialType, res.confidence, res.notProb);
   } else {
-    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f)", res.materialType, res.confidence);
+    res.isConfident = false;
+    res.materialType = "REJECTED";
+    res.rejectReason = (res.notProb > res.confidence) ? "not_bottle_or_can" : "low_confidence";
+    LOGF("TINYML", "REJECTED: %s (conf=%.2f vs notProb=%.2f, threshold=%.2f)",
+         res.rejectReason, res.confidence, res.notProb, ML_CONFIDENCE_THRESHOLD);
   }
 
   return res;
@@ -802,32 +873,63 @@ void loop() {
       LOG("FSM", "READY — Notifying 2nd ESP32 to prompt user");
       sendControllerCmd("CMD:READY"); // 2nd ESP32 beeps & blinks LED
 
-      // Wait 0.8s for user to insert item and motion to settle
-      delay(800);
+      sendLog("INFO", "SESSION", "Deposit session started — awaiting item insertion", activeSessionId);
 
-      LOG("FSM", "READY → PROCESSING (capturing frame)");
+      // Settle delay: Give user 2.5s window to place bottle/can into the chute
+      LOGF("FSM", "Waiting %ums for user to insert item...", INSERTION_SETTLE_MS);
+      delay(INSERTION_SETTLE_MS);
+
+      LOG("FSM", "READY → PROCESSING (analyzing chute)");
       ledOn();
       state = STATE_PROCESSING;
       break;
     }
 
     case STATE_PROCESSING: {
-      camera_fb_t *fb = captureImage();
-      if (!fb) {
-        LOG("FSM", "Frame capture failed — retrying in 1s");
-        ledOff();
-        sendControllerCmd("CMD:ERROR");
-        delay(1000);
+      camera_fb_t *fb = nullptr;
+      LocalClassificationResult mlRes;
+      bool itemDetected = false;
+
+      // Allow up to 3 capture checks if chute is currently empty (allows user time to insert)
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        fb = captureImage();
+        if (!fb) {
+          LOGF("FSM", "Frame capture attempt %d failed — retrying in 500ms", attempt);
+          delay(500);
+          continue;
+        }
+
+        mlRes = classifyLocallyML(fb);
+
+        // If the chute is dark/empty, don't abort immediately — give user extra time
+        if (strcmp(mlRes.rejectReason, "empty_chute") == 0 && attempt < 3) {
+          LOGF("FSM", "Chute empty on attempt %d/3 — waiting 1.2s for user to drop item...", attempt);
+          esp_camera_fb_return(fb);
+          fb = nullptr;
+          delay(1200);
+          continue;
+        }
+
+        itemDetected = true;
         break;
       }
 
-      // Run Local TinyML & Anti-False-Positive Filter checks
-      LocalClassificationResult mlRes = classifyLocallyML(fb);
+      if (!fb) {
+        LOG("FSM", "No frame obtained after retries — returning to IDLE");
+        ledOff();
+        sendControllerCmd("CMD:ERROR");
+        activeSessionId[0] = '\0';
+        state = STATE_IDLE;
+        break;
+      }
+
+      // ── Always log the full sensor and vision reading to Admin ────────────
+      sendReadingTelemetry(mlRes, activeSessionId);
 
       if (mlRes.isConfident) {
         LOGF("FSM", "ACCEPTED: %s (conf=%.2f) -- Opening gate!", mlRes.materialType, mlRes.confidence);
-        
-        // Command 2nd ESP32 to open servo gate for 3s and play accept chime
+
+        // Command 2nd ESP32 to open servo gate for deposit and play accept chime
         sendControllerCmd("CMD:OPEN");
 
         // Sync deposit with cloud backend in background
@@ -848,11 +950,6 @@ void loop() {
 
         // Notify user's mobile app of rejection with reason
         sendRejectResult(activeSessionId, mlRes.rejectReason, mlRes.confidence);
-
-        char logDetails[128];
-        snprintf(logDetails, sizeof(logDetails), "reason=%s pet=%.2f can=%.2f not=%.2f conf=%.2f",
-                 mlRes.rejectReason, mlRes.petProb, mlRes.canProb, mlRes.notProb, mlRes.confidence);
-        sendLog("WARN", "REJECT", "Non-recyclable or unrecognized item rejected", logDetails);
 
         esp_camera_fb_return(fb);
         ledOff();

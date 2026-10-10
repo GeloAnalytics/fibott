@@ -18,6 +18,8 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
+  Activity,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -488,16 +490,33 @@ export default function AdminLogsPage() {
               <Button
                 key={src}
                 size="sm"
-                variant={sourceFilter === src ? "default" : "outline"}
+                variant={sourceFilter === src && searchQuery !== "VISION" ? "default" : "outline"}
                 className="h-8 text-xs"
                 onClick={() => {
                   setSourceFilter(src);
+                  if (searchQuery === "VISION") setSearchQuery("");
                   setPagination((p) => ({ ...p, page: 1 }));
                 }}
               >
                 {src}
               </Button>
             ))}
+
+            <Button
+              size="sm"
+              variant={searchQuery === "VISION" ? "default" : "outline"}
+              className="h-8 text-xs gap-1 border-purple-500/40 text-purple-600 dark:text-purple-400 font-medium"
+              onClick={() => {
+                if (searchQuery === "VISION") {
+                  setSearchQuery("");
+                } else {
+                  setSearchQuery("VISION");
+                }
+                setPagination((p) => ({ ...p, page: 1 }));
+              }}
+            >
+              <Cpu className="size-3" /> ESP32 Vision
+            </Button>
           </div>
 
           <div className="relative w-full sm:w-64">
@@ -628,14 +647,149 @@ export default function AdminLogsPage() {
               <p className="text-sm font-medium mt-1">{selectedLog?.message}</p>
             </div>
 
-            {selectedLog?.details && (
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase pb-1">Raw Payload / Stack Trace</p>
-                <pre className="p-3 rounded-md bg-muted font-mono text-xs overflow-x-auto max-h-96 whitespace-pre-wrap">
-                  {selectedLog.details}
-                </pre>
-              </div>
-            )}
+            {selectedLog?.details && (() => {
+              let parsed: Record<string, unknown> | null = null;
+              try {
+                parsed = JSON.parse(selectedLog.details);
+              } catch {
+                parsed = null;
+              }
+
+              const isTelemetry = parsed && (
+                parsed.petProb !== undefined ||
+                parsed.materialType !== undefined ||
+                parsed.brightness !== undefined ||
+                parsed.avgBrightness !== undefined ||
+                parsed.probabilities !== undefined
+              );
+
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const p = parsed as any;
+              const petProb = p?.petProb ?? p?.probabilities?.pet;
+              const canProb = p?.canProb ?? p?.probabilities?.can;
+              const notProb = p?.notProb ?? p?.probabilities?.not;
+              const brightness = p?.brightness ?? p?.avgBrightness ?? p?.sensorReadings?.avgBrightness;
+              const colorDiff = p?.colorDiff ?? p?.avgColorDiff ?? p?.sensorReadings?.avgColorDiff;
+              const skinRatio = p?.skinRatio ?? p?.sensorReadings?.skinRatio;
+              const latencyMs = p?.latencyMs ?? p?.elapsedMs;
+
+              return (
+                <div className="space-y-4">
+                  {isTelemetry && (
+                    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-border pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Eye className="size-4 text-primary" />
+                          <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                            ESP32-CAM Vision & AI Telemetry
+                          </span>
+                        </div>
+                        {p?.decision && (
+                          <Badge
+                            variant={p.decision === "ACCEPT" ? "default" : "destructive"}
+                            className="font-mono text-xs"
+                          >
+                            {p.decision === "ACCEPT" ? "ACCEPTED" : "REJECTED"}
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        {p?.materialType && (
+                          <div className="p-2 rounded-md bg-muted/50">
+                            <span className="text-[10px] uppercase text-muted-foreground block">Material</span>
+                            <span className="font-mono font-semibold text-foreground">{p.materialType}</span>
+                          </div>
+                        )}
+                        {p?.confidence !== undefined && (
+                          <div className="p-2 rounded-md bg-muted/50">
+                            <span className="text-[10px] uppercase text-muted-foreground block">Confidence</span>
+                            <span className="font-mono font-semibold text-foreground">
+                              {(Number(p.confidence) * (Number(p.confidence) <= 1 ? 100 : 1)).toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                        {latencyMs !== undefined && (
+                          <div className="p-2 rounded-md bg-muted/50">
+                            <span className="text-[10px] uppercase text-muted-foreground block">AI Latency</span>
+                            <span className="font-mono font-semibold text-foreground">{latencyMs}ms</span>
+                          </div>
+                        )}
+                        {p?.reason && p.reason !== "none" && (
+                          <div className="p-2 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
+                            <span className="text-[10px] uppercase block">Reject Reason</span>
+                            <span className="font-mono font-semibold">{p.reason}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {(petProb !== undefined || canProb !== undefined || notProb !== undefined) && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[11px] font-semibold text-muted-foreground block">
+                            Neural Network Class Probabilities:
+                          </span>
+                          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="p-2 rounded bg-muted/40 border border-border/60">
+                              <span className="text-[10px] text-muted-foreground block">PET Bottle</span>
+                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {petProb !== undefined ? `${(Number(petProb) * 100).toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded bg-muted/40 border border-border/60">
+                              <span className="text-[10px] text-muted-foreground block">Aluminum Can</span>
+                              <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
+                                {canProb !== undefined ? `${(Number(canProb) * 100).toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded bg-muted/40 border border-border/60">
+                              <span className="text-[10px] text-muted-foreground block">Not Recyclable</span>
+                              <span className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                                {notProb !== undefined ? `${(Number(notProb) * 100).toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {(brightness !== undefined || colorDiff !== undefined || skinRatio !== undefined) && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[11px] font-semibold text-muted-foreground block">
+                            Camera Sensor & Visual Filter Readings:
+                          </span>
+                          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="p-2 rounded bg-muted/30">
+                              <span className="text-[10px] text-muted-foreground block">Avg Brightness</span>
+                              <span className="font-mono font-semibold text-foreground">
+                                {brightness !== undefined ? Number(brightness).toFixed(1) : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded bg-muted/30">
+                              <span className="text-[10px] text-muted-foreground block">Color Variance</span>
+                              <span className="font-mono font-semibold text-foreground">
+                                {colorDiff !== undefined ? Number(colorDiff).toFixed(1) : "—"}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded bg-muted/30">
+                              <span className="text-[10px] text-muted-foreground block">Skin Tone Ratio</span>
+                              <span className="font-mono font-semibold text-foreground">
+                                {skinRatio !== undefined ? `${(Number(skinRatio) * 100).toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase pb-1">Raw Payload</p>
+                    <pre className="p-3 rounded-md bg-muted font-mono text-xs overflow-x-auto max-h-60 whitespace-pre-wrap">
+                      {selectedLog.details}
+                    </pre>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
