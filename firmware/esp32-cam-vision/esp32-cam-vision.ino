@@ -55,9 +55,10 @@ static uint32_t packetSeqNum = 0;
 
 struct LocalClassificationResult {
   const char* materialType; // "PET_BOTTLE", "ALUMINUM_CAN", or "REJECTED"
-  const char* rejectReason; // "low_confidence", "hand_detected", "paper_detected", etc.
+  const char* rejectReason; // "not_bottle_or_can", "low_confidence", "hand_detected", etc.
   float petProb;
   float canProb;
+  float notProb;   // probability for NOT_BOTTLE_OR_CAN class
   float confidence;
   bool isConfident;
 };
@@ -534,6 +535,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   res.rejectReason = "unknown";
   res.petProb      = 0.0f;
   res.canProb      = 0.0f;
+  res.notProb      = 0.0f;
   res.confidence   = 0.0f;
   res.isConfident  = false;
 
@@ -647,14 +649,30 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  // 5. Dequantize output probabilities
+  // 5. Dequantize output probabilities (3 classes)
   int8_t petRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_PET_BOTTLE];
   int8_t canRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_ALUMINUM_CAN];
+  int8_t notRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_NOT_BOTTLE_OR_CAN];
+
   res.petProb = ((float)petRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
   res.canProb = ((float)canRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
+  res.notProb = ((float)notRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
 
-  float margin = fabs(res.petProb - res.canProb);
+  unsigned long elapsedMs = millis() - startMs;
+  LOGF("TINYML", "Inference in %lums | PET=%.2f CAN=%.2f NOT=%.2f",
+       elapsedMs, res.petProb, res.canProb, res.notProb);
 
+  // STAGE 1: Fast reject if model is confident this is NOT a bottle or can
+  if (res.notProb >= ML_NOT_CLASS_THRESHOLD) {
+    LOGF("TINYML", "REJECTED: model says NOT_BOTTLE_OR_CAN (%.2f)", res.notProb);
+    res.materialType = "REJECTED";
+    res.rejectReason = "not_bottle_or_can";
+    res.confidence   = res.notProb;
+    res.isConfident  = false;
+    return res;
+  }
+
+  // STAGE 2: Pick winning class between PET_BOTTLE and ALUMINUM_CAN
   if (res.canProb > res.petProb) {
     res.materialType = "ALUMINUM_CAN";
     res.confidence   = res.canProb;
@@ -663,17 +681,17 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     res.confidence   = res.petProb;
   }
 
-  // GENERAL REJECTION: Only genuine bottles or cans with high confidence & margin pass
-  res.isConfident = (res.confidence >= ML_CONFIDENCE_THRESHOLD && margin >= ML_MARGIN_THRESHOLD);
+  // STAGE 3: Confidence gate — winner must still clear the threshold
+  res.isConfident = (res.confidence >= ML_CONFIDENCE_THRESHOLD);
 
   if (!res.isConfident) {
+    LOGF("TINYML", "REJECTED: low confidence %.2f (threshold %.2f)",
+         res.confidence, ML_CONFIDENCE_THRESHOLD);
     res.materialType = "REJECTED";
     res.rejectReason = "not_bottle_or_can";
+  } else {
+    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f)", res.materialType, res.confidence);
   }
-
-  unsigned long elapsedMs = millis() - startMs;
-  LOGF("TINYML", "Inference in %lums | %s (PET=%.2f, CAN=%.2f, margin=%.2f, pass=%s)",
-       elapsedMs, res.materialType, res.petProb, res.canProb, margin, res.isConfident ? "YES" : "NO");
 
   return res;
 }
@@ -711,11 +729,13 @@ void setup() {
   delay(200);
 
   Serial.println("\n");
-  Serial.println("╔══════════════════════════════════════════════════╗");
-  Serial.println("║   Fibott ESP32-CAM (Dedicated Vision & AI)       ║");
-  Serial.printf( "║  Firmware v%-38s║\n", FIRMWARE_VERSION);
-  Serial.println("║  Wireless ESP-NOW Link → Kiosk Controller (0 Wires)║");
-  Serial.println("╚══════════════════════════════════════════════════╝");
+  Serial.println("====================================================");
+  Serial.println("  Fibott ESP32-CAM  [3-Class Vision + AI]          ");
+  Serial.printf( "  Firmware: %s\n", FIRMWARE_VERSION);
+  Serial.println("  Model:    3-class MobileNetV1 INT8 (96x96)       ");
+  Serial.println("  Classes:  PET | ALUMINUM_CAN | NOT_BOTTLE_OR_CAN ");
+  Serial.println("  Link:     ESP-NOW 2.4GHz -> Kiosk Controller     ");
+  Serial.println("====================================================");
   Serial.println();
 
   pinMode(PIN_LED_STATUS, OUTPUT);
@@ -805,7 +825,7 @@ void loop() {
       LocalClassificationResult mlRes = classifyLocallyML(fb);
 
       if (mlRes.isConfident) {
-        LOGF("FSM", "✅ Item ACCEPTED (%s) — Triggering Servo Gate on 2nd ESP32!", mlRes.materialType);
+        LOGF("FSM", "ACCEPTED: %s (conf=%.2f) -- Opening gate!", mlRes.materialType, mlRes.confidence);
         
         // Command 2nd ESP32 to open servo gate for 3s and play accept chime
         sendControllerCmd("CMD:OPEN");
@@ -817,10 +837,10 @@ void loop() {
         ledOff();
 
         activeSessionId[0] = '\0';
-        LOG("FSM", "Deposit SUCCESS → IDLE");
+        LOG("FSM", "Deposit SUCCESS -> IDLE");
         state = STATE_IDLE;
       } else {
-        LOGF("FSM", "❌ Item REJECTED (Reason: %s, Conf: %.2f) — Gate stays LOCKED 🔒",
+        LOGF("FSM", "REJECTED (reason: %s, conf=%.2f) -- Gate locked.",
              mlRes.rejectReason, mlRes.confidence);
 
         // Command 2nd ESP32 to play 3 reject beeps and ensure servo gate remains locked
@@ -830,15 +850,15 @@ void loop() {
         sendRejectResult(activeSessionId, mlRes.rejectReason, mlRes.confidence);
 
         char logDetails[128];
-        snprintf(logDetails, sizeof(logDetails), "reason=%s pet=%.2f can=%.2f conf=%.2f",
-                 mlRes.rejectReason, mlRes.petProb, mlRes.canProb, mlRes.confidence);
+        snprintf(logDetails, sizeof(logDetails), "reason=%s pet=%.2f can=%.2f not=%.2f conf=%.2f",
+                 mlRes.rejectReason, mlRes.petProb, mlRes.canProb, mlRes.notProb, mlRes.confidence);
         sendLog("WARN", "REJECT", "Non-recyclable or unrecognized item rejected", logDetails);
 
         esp_camera_fb_return(fb);
         ledOff();
 
         activeSessionId[0] = '\0';
-        LOG("FSM", "REJECTED → IDLE");
+        LOG("FSM", "REJECTED -> IDLE");
         state = STATE_IDLE;
       }
       break;

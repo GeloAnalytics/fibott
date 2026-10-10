@@ -26,7 +26,7 @@
 #define PIN_SERVO       18
 #define SERVO_CLOSED_US 1500   // Rest/Closed pulse width (~90°) — adjust for chute
 #define SERVO_OPEN_US   2000   // Open pulse width (~135°) — adjust for chute
-#define GATE_OPEN_MS    3000   // How long gate stays open for deposit (milliseconds)
+#define GATE_OPEN_MS    6000   // How long gate stays open for deposit (milliseconds)
 
 // ── Built-in Onboard LED Configuration ───────────────────────────────────────
 // Uses the ESP32's onboard built-in LED (no external LED wiring required)

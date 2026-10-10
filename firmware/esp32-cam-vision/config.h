@@ -12,15 +12,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "2.1.0-wireless-espnow-vision"
+#define FIRMWARE_VERSION "3.0.0-3class-espnow-vision"
 
 // ── Strict Local ML Inference & Rejection Configuration ─────────────────────
-// With a 2-class softmax model (PET vs CAN), random clutter / hands / paper
-// will output ~0.50-0.65 probability. Genuine bottles & cans output >0.80.
-// Setting threshold to 0.78f and margin to 0.50f ensures non-bottles and non-cans
-// (hands, paper, cups, trash) are strictly REJECTED!
-#define ML_CONFIDENCE_THRESHOLD 0.78f
-#define ML_MARGIN_THRESHOLD     0.50f   // |petProb - canProb| must be >= 0.50
+// 3-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN, 2=NOT_BOTTLE_OR_CAN
+// The model was trained on real ESP32-CAM images from the Dataset/ folder.
+// A high confidence threshold ensures borderline items are still rejected.
+// No margin threshold needed — the 3rd class directly absorbs all non-recyclables.
+#define ML_CONFIDENCE_THRESHOLD 0.70f   // Winning class must score >= 70%
+#define ML_NOT_CLASS_THRESHOLD  0.50f   // If NOT_BOTTLE_OR_CAN > 50% -> instant reject
 
 // ── Smart Anti-False-Positive Heuristic Filters ───────────────────────────────
 #define FILTER_ENABLE_HAND_DETECTION  true  // Detect human skin tones in chute
