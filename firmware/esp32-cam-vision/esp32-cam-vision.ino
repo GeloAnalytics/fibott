@@ -622,76 +622,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  // 2. Run Visual Heuristics (Hand & Paper & Empty chute filters)
-  int skinPixelCount = 0;
-  long totalBrightness = 0;
-  long totalColorDiff  = 0;
-  int sampleCount = 0;
-
-  int totalPixels = srcW * srcH;
-  int step = 6; // sample every 6th pixel for high speed
-
-  for (int i = 0; i < totalPixels * 3; i += (step * 3)) {
-    uint8_t r = rgbDecodeBuffer[i];
-    uint8_t g = rgbDecodeBuffer[i + 1];
-    uint8_t b = rgbDecodeBuffer[i + 2];
-
-    int brightness = (r + g + b) / 3;
-    totalBrightness += brightness;
-
-    int diff = abs(r - g) + abs(g - b) + abs(b - r);
-    totalColorDiff += diff;
-
-    // Skin Tone heuristic: Human skin under LED lighting (R > G > B, significant red bias)
-    if (r > 80 && g > 45 && b > 20 && (r > g) && (g > b) && (r - g > 15) && (r - b > 22)) {
-      skinPixelCount++;
-    }
-    sampleCount++;
-  }
-
-  float skinRatio = sampleCount > 0 ? (float)skinPixelCount / sampleCount : 0.0f;
-  float avgBrightness = sampleCount > 0 ? (float)totalBrightness / sampleCount : 0.0f;
-  float avgColorDiff = sampleCount > 0 ? (float)totalColorDiff / sampleCount : 0.0f;
-
-  res.avgBrightness = avgBrightness;
-  res.avgColorDiff  = avgColorDiff;
-  res.skinRatio     = skinRatio;
-
-  LOGF("FILTER", "Scene stats: Brightness=%.1f, ColorDiff=%.1f, SkinRatio=%.1f%%",
-       avgBrightness, avgColorDiff, skinRatio * 100.0f);
-
-  // Rejection check: Human Hand detection (requires >38% skin tone area to avoid false triggers on red labels)
-  if (FILTER_ENABLE_HAND_DETECTION && skinRatio > 0.38f) {
-    LOGF("FILTER", "🚫 REJECTED: Human hand detected in chute (%.1f%%)", skinRatio * 100.0f);
-    res.materialType = "REJECTED";
-    res.rejectReason = "hand_detected";
-    res.confidence = skinRatio;
-    res.elapsedMs = millis() - startMs;
-    return res;
-  }
-
-  // Rejection check: Flat non-recyclable sheet (very bright, pure white/gray with near zero color difference)
-  if (FILTER_ENABLE_PAPER_DETECTION && avgBrightness > 185.0f && avgColorDiff < 4.0f) {
-    LOGF("FILTER", "🚫 REJECTED: Flat paper/tissue detected (Brightness=%.1f, ColorDiff=%.1f)",
-         avgBrightness, avgColorDiff);
-    res.materialType = "REJECTED";
-    res.rejectReason = "paper_detected";
-    res.confidence = 0.90f;
-    res.elapsedMs = millis() - startMs;
-    return res;
-  }
-
-  // Check: Empty chute / no object placed (dark empty chamber)
-  if (FILTER_ENABLE_EMPTY_CHUTE && avgBrightness < 20.0f) {
-    LOGF("FILTER", "🚫 EMPTY CHUTE: No bottle or can detected (Brightness=%.1f)", avgBrightness);
-    res.materialType = "REJECTED";
-    res.rejectReason = "empty_chute";
-    res.confidence = 0.90f;
-    res.elapsedMs = millis() - startMs;
-    return res;
-  }
-
-  // 3. Preprocess & Quantize into TFLite Input Tensor
+  // 2. Preprocess & Quantize into TFLite Input Tensor (96x96 INT8)
   int8_t *inTensor = tfliteInputTensor->data.int8;
   for (int y = 0; y < MODEL_INPUT_SIZE; y++) {
     int srcY = (y * srcH) / MODEL_INPUT_SIZE;
@@ -711,7 +642,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     }
   }
 
-  // 4. Run MobileNetV1 Inference
+  // 3. Run MobileNetV1 Inference
   if (tfliteInterpreter->Invoke() != kTfLiteOk) {
     LOG("TINYML", "ERROR: Invoke() failed");
     res.rejectReason = "ml_invoke_failed";
@@ -719,7 +650,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  // 5. Dequantize output probabilities (2 classes: 0=PET_BOTTLE, 1=ALUMINUM_CAN)
+  // 4. Dequantize output probabilities (0=PET_BOTTLE, 1=ALUMINUM_CAN)
   int8_t petRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_PET_BOTTLE];
   int8_t canRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_ALUMINUM_CAN];
 
@@ -728,10 +659,8 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   res.notProb = 0.0f;
 
   res.elapsedMs = millis() - startMs;
-  LOGF("TINYML", "Inference in %lums | PET=%.2f CAN=%.2f",
-       res.elapsedMs, res.petProb, res.canProb);
 
-  // Pick winning recyclable class between PET_BOTTLE and ALUMINUM_CAN
+  // 5. Winning class decision (pure 2-class model)
   if (res.canProb > res.petProb) {
     res.materialType = "ALUMINUM_CAN";
     res.confidence   = res.canProb;
@@ -740,18 +669,11 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     res.confidence   = res.petProb;
   }
 
-  // Accept if winner clears confidence threshold
-  if (res.confidence >= ML_CONFIDENCE_THRESHOLD) {
-    res.isConfident = true;
-    res.rejectReason = "";
-    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f)", res.materialType, res.confidence);
-  } else {
-    res.isConfident = false;
-    res.materialType = "REJECTED";
-    res.rejectReason = "low_confidence";
-    LOGF("TINYML", "REJECTED: low confidence %.2f (threshold %.2f)",
-         res.confidence, ML_CONFIDENCE_THRESHOLD);
-  }
+  res.isConfident = true;
+  res.rejectReason = "";
+
+  LOGF("TINYML", "Inference complete in %lums | %s (PET=%.2f, CAN=%.2f, conf=%.2f)",
+       res.elapsedMs, res.materialType, res.petProb, res.canProb, res.confidence);
 
   return res;
 }
@@ -875,78 +797,35 @@ void loop() {
     }
 
     case STATE_PROCESSING: {
-      camera_fb_t *fb = nullptr;
-      LocalClassificationResult mlRes;
-      bool itemDetected = false;
-
-      // Allow up to 3 capture checks if chute is currently empty (allows user time to insert)
-      for (int attempt = 1; attempt <= 3; attempt++) {
-        fb = captureImage();
-        if (!fb) {
-          LOGF("FSM", "Frame capture attempt %d failed — retrying in 500ms", attempt);
-          delay(500);
-          continue;
-        }
-
-        mlRes = classifyLocallyML(fb);
-
-        // If the chute is dark/empty, don't abort immediately — give user extra time
-        if (strcmp(mlRes.rejectReason, "empty_chute") == 0 && attempt < 3) {
-          LOGF("FSM", "Chute empty on attempt %d/3 — waiting 1.2s for user to drop item...", attempt);
-          esp_camera_fb_return(fb);
-          fb = nullptr;
-          delay(1200);
-          continue;
-        }
-
-        itemDetected = true;
-        break;
-      }
-
+      camera_fb_t *fb = captureImage();
       if (!fb) {
-        LOG("FSM", "No frame obtained after retries — returning to IDLE");
+        LOG("FSM", "Frame capture failed — retrying in 1s");
         ledOff();
         sendControllerCmd("CMD:ERROR");
-        activeSessionId[0] = '\0';
-        state = STATE_IDLE;
+        delay(1000);
         break;
       }
 
-      // ── Always log the full sensor and vision reading to Admin ────────────
+      // Run Local TinyML (2-class MobileNet INT8: PET_BOTTLE vs ALUMINUM_CAN)
+      LocalClassificationResult mlRes = classifyLocallyML(fb);
+
+      // ── Stream vision and sensor reading to Admin Logs ────────────────────
       sendReadingTelemetry(mlRes, activeSessionId);
 
-      if (mlRes.isConfident) {
-        LOGF("FSM", "ACCEPTED: %s (conf=%.2f) -- Opening gate!", mlRes.materialType, mlRes.confidence);
+      LOGF("FSM", "ACCEPTED: %s (conf=%.2f) -- Opening servo gate!", mlRes.materialType, mlRes.confidence);
 
-        // Command 2nd ESP32 to open servo gate for deposit and play accept chime
-        sendControllerCmd("CMD:OPEN");
+      // Command 2nd ESP32 to open servo gate for deposit
+      sendControllerCmd("CMD:OPEN");
 
-        // Sync deposit with cloud backend in background
-        uploadImage(fb, activeSessionId, mlRes.materialType, mlRes.confidence);
+      // Sync deposit with cloud backend in background
+      uploadImage(fb, activeSessionId, mlRes.materialType, mlRes.confidence);
 
-        esp_camera_fb_return(fb);
-        ledOff();
+      esp_camera_fb_return(fb);
+      ledOff();
 
-        activeSessionId[0] = '\0';
-        LOG("FSM", "Deposit SUCCESS -> IDLE");
-        state = STATE_IDLE;
-      } else {
-        LOGF("FSM", "REJECTED (reason: %s, conf=%.2f) -- Gate locked.",
-             mlRes.rejectReason, mlRes.confidence);
-
-        // Command 2nd ESP32 to play 3 reject beeps and ensure servo gate remains locked
-        sendControllerCmd("CMD:REJECT");
-
-        // Notify user's mobile app of rejection with reason
-        sendRejectResult(activeSessionId, mlRes.rejectReason, mlRes.confidence);
-
-        esp_camera_fb_return(fb);
-        ledOff();
-
-        activeSessionId[0] = '\0';
-        LOG("FSM", "REJECTED -> IDLE");
-        state = STATE_IDLE;
-      }
+      activeSessionId[0] = '\0';
+      LOG("FSM", "Deposit SUCCESS -> IDLE");
+      state = STATE_IDLE;
       break;
     }
 
