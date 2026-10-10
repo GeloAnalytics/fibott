@@ -418,9 +418,17 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 
 // ── Frame Capture ─────────────────────────────────────────────────────────────
 static camera_fb_t* captureImage() {
-  LOG("CAMERA", "Illuminating chute and capturing single frame...");
+  LOG("CAMERA", "Illuminating chute, settling auto-exposure, and capturing frame...");
   flashOn();
   delay(60);
+
+  // The model was fine-tuned on correctly exposed kiosk frames. The OV2640's
+  // exposure loop needs one frame under flash before its reading stabilizes;
+  // discard that warm-up frame and classify only the next frame.
+  camera_fb_t *warm = esp_camera_fb_get();
+  if (warm) {
+    esp_camera_fb_return(warm);
+  }
 
   camera_fb_t *fb = esp_camera_fb_get();
   flashOff();
@@ -558,7 +566,7 @@ static bool initLocalML() {
   }
 
   // Register only the MobileNetV1 INT8 required operators to minimize flash usage
-  static tflite::MicroMutableOpResolver<10> resolver;
+  static tflite::MicroMutableOpResolver<11> resolver;
   static bool resolverReady = false;
   if (!resolverReady) {
     resolver.AddConv2D();
@@ -571,6 +579,7 @@ static bool initLocalML() {
     resolver.AddDequantize();
     resolver.AddPad();
     resolver.AddAdd();
+    resolver.AddMean();
     resolverReady = true;
   }
 

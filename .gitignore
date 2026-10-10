@@ -45,6 +45,9 @@ next-env.d.ts
 # ML training images (large/personal photos of kiosk deposits) — the
 # trained models/bottle-can-head/weights.json output is small and fine to commit.
 /ml-data
+/Dataset/
+/models/esp32/candidates/
+/scripts/ml/__pycache__/
 
 .vercel
 .env*
