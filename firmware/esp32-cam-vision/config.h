@@ -12,14 +12,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "3.0.0-3class-espnow-vision"
+#define FIRMWARE_VERSION "2.2.0-2class-espnow-vision"
 
-// ── Strict Local ML Inference & Rejection Configuration ─────────────────────
-// 3-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN, 2=NOT_BOTTLE_OR_CAN
-// The model was trained on real ESP32-CAM images from the Dataset/ folder.
-// Balanced thresholds ensure genuine bottles and cans are accepted without false rejections.
-#define ML_CONFIDENCE_THRESHOLD 0.48f   // Winning recyclable class must score >= 48%
-#define ML_NOT_CLASS_THRESHOLD  0.60f   // If NOT_BOTTLE_OR_CAN > 60% and dominates -> reject
+// ── 2-Class Local ML Inference Configuration ────────────────────────────────
+// 2-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN
+#define ML_CONFIDENCE_THRESHOLD 0.50f   // Winning class threshold (>= 50%)
+#define ML_MARGIN_THRESHOLD     0.05f   // Minimum margin between classes
 
 // ── Smart Anti-False-Positive Heuristic Filters ───────────────────────────────
 #define FILTER_ENABLE_HAND_DETECTION  true  // Detect human skin tones in chute

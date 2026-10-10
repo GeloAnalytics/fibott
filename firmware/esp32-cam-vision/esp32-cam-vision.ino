@@ -719,30 +719,19 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     return res;
   }
 
-  // 5. Dequantize output probabilities (3 classes)
+  // 5. Dequantize output probabilities (2 classes: 0=PET_BOTTLE, 1=ALUMINUM_CAN)
   int8_t petRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_PET_BOTTLE];
   int8_t canRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_ALUMINUM_CAN];
-  int8_t notRawOut = tfliteOutputTensor->data.int8[MODEL_CLASS_NOT_BOTTLE_OR_CAN];
 
   res.petProb = ((float)petRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
   res.canProb = ((float)canRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
-  res.notProb = ((float)notRawOut - (float)MODEL_OUTPUT_ZERO_POINT) * MODEL_OUTPUT_SCALE;
+  res.notProb = 0.0f;
 
   res.elapsedMs = millis() - startMs;
-  LOGF("TINYML", "Inference in %lums | PET=%.2f CAN=%.2f NOT=%.2f",
-       res.elapsedMs, res.petProb, res.canProb, res.notProb);
+  LOGF("TINYML", "Inference in %lums | PET=%.2f CAN=%.2f",
+       res.elapsedMs, res.petProb, res.canProb);
 
-  // STAGE 1: Fast reject only if model strongly identifies NOT_BOTTLE_OR_CAN and dominates
-  if (res.notProb >= ML_NOT_CLASS_THRESHOLD && res.notProb > res.petProb && res.notProb > res.canProb) {
-    LOGF("TINYML", "REJECTED: NOT_BOTTLE_OR_CAN dominates (%.2f)", res.notProb);
-    res.materialType = "REJECTED";
-    res.rejectReason = "not_bottle_or_can";
-    res.confidence   = res.notProb;
-    res.isConfident  = false;
-    return res;
-  }
-
-  // STAGE 2: Pick winning recyclable class between PET_BOTTLE and ALUMINUM_CAN
+  // Pick winning recyclable class between PET_BOTTLE and ALUMINUM_CAN
   if (res.canProb > res.petProb) {
     res.materialType = "ALUMINUM_CAN";
     res.confidence   = res.canProb;
@@ -751,17 +740,17 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
     res.confidence   = res.petProb;
   }
 
-  // STAGE 3: Accept if the recyclable class meets the confidence floor and is not dominated by NOT class
-  if (res.confidence >= ML_CONFIDENCE_THRESHOLD && res.confidence >= res.notProb) {
+  // Accept if winner clears confidence threshold
+  if (res.confidence >= ML_CONFIDENCE_THRESHOLD) {
     res.isConfident = true;
     res.rejectReason = "";
-    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f vs notProb=%.2f)", res.materialType, res.confidence, res.notProb);
+    LOGF("TINYML", "ACCEPTED: %s (conf=%.2f)", res.materialType, res.confidence);
   } else {
     res.isConfident = false;
     res.materialType = "REJECTED";
-    res.rejectReason = (res.notProb > res.confidence) ? "not_bottle_or_can" : "low_confidence";
-    LOGF("TINYML", "REJECTED: %s (conf=%.2f vs notProb=%.2f, threshold=%.2f)",
-         res.rejectReason, res.confidence, res.notProb, ML_CONFIDENCE_THRESHOLD);
+    res.rejectReason = "low_confidence";
+    LOGF("TINYML", "REJECTED: low confidence %.2f (threshold %.2f)",
+         res.confidence, ML_CONFIDENCE_THRESHOLD);
   }
 
   return res;
@@ -801,10 +790,10 @@ void setup() {
 
   Serial.println("\n");
   Serial.println("====================================================");
-  Serial.println("  Fibott ESP32-CAM  [3-Class Vision + AI]          ");
+  Serial.println("  Fibott ESP32-CAM  [2-Class Vision + AI]          ");
   Serial.printf( "  Firmware: %s\n", FIRMWARE_VERSION);
-  Serial.println("  Model:    3-class MobileNetV1 INT8 (96x96)       ");
-  Serial.println("  Classes:  PET | ALUMINUM_CAN | NOT_BOTTLE_OR_CAN ");
+  Serial.println("  Model:    2-class MobileNetV1 INT8 (96x96)       ");
+  Serial.println("  Classes:  0=PET_BOTTLE | 1=ALUMINUM_CAN          ");
   Serial.println("  Link:     ESP-NOW 2.4GHz -> Kiosk Controller     ");
   Serial.println("====================================================");
   Serial.println();
