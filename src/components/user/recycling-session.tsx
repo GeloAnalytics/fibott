@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Recycle, CheckCircle, Clock, AlertCircle, LogOut, AlertTriangle, Camera, Radio } from "lucide-react";
+import { Loader2, Recycle, CheckCircle, Clock, AlertCircle, LogOut, Camera, Radio } from "lucide-react";
 
 type Phase =
   | { name: "idle" }
@@ -259,24 +259,7 @@ export function RecyclingSession() {
             </div>
 
             {/* Real-Time Live Status Cards */}
-            {lastDeposit && lastDeposit.status === "REJECTED" ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-900 dark:text-amber-200 space-y-1">
-                <div className="flex items-center gap-2 font-semibold text-sm">
-                  <AlertTriangle className="size-4 text-amber-500 shrink-0" />
-                  Item Rejected (Not a Bottle or Can)
-                </div>
-                <p className="text-xs text-amber-800 dark:text-amber-300">
-                  Detected status: <span className="font-mono font-bold">&quot;{
-                    lastDeposit.classificationLabel?.includes("not_bottle_or_can")
-                      ? "Not a plastic bottle or aluminum can"
-                      : lastDeposit.classificationLabel?.replace(/^(rejected:|fine-tuned:)/, "")
-                  }&quot;</span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  💡 Tip: The kiosk only accepts plastic bottles (PET) and aluminum cans. Please ensure your bottle or can is placed directly in the chute.
-                </p>
-              </div>
-            ) : lastDeposit && lastDeposit.status === "ACCEPTED" ? (
+            {lastDeposit && lastDeposit.status === "ACCEPTED" ? (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-emerald-900 dark:text-emerald-200">
                 <div className="flex items-center gap-2 font-semibold text-sm">
                   <CheckCircle className="size-4 text-emerald-500 shrink-0" />
