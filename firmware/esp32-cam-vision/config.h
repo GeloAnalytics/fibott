@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "2.2.0-2class-espnow-vision"
+#define FIRMWARE_VERSION "2.3.0-2class-transfer-v4"
 
 // ── 2-Class Local ML Inference Configuration ────────────────────────────────
 // 2-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN
@@ -31,7 +31,7 @@
 #define CAPTURE_HEIGHT     240
 
 // ── Flash LED Brightness ──────────────────────────────────────────────────────
-#define FLASH_BRIGHTNESS   0.25f  // 25% PWM brightness to prevent overexposure & specular glare
+#define FLASH_BRIGHTNESS   0.50f  // Matches the lighting used by the real kiosk capture training set.
 
 // ── WiFi Configuration ────────────────────────────────────────────────────────
 #define WIFI_SSID     "Fibott"
