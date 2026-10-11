@@ -16,6 +16,7 @@
     "ml:collect": "tsx scripts/ml/collect-server.ts",
     "ml:export-deposits": "tsx scripts/ml/export-deposits.ts",
     "ml:apply-annotations": "tsx scripts/ml/apply-annotations.ts",
+    "ml:transfer": "python scripts/ml/transfer_esp32_model.py",
     "test:mikrotik": "tsx infra/test-mikrotik.ts",
     "db:seed": "prisma db seed"
   },

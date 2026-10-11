@@ -1,28 +1,35 @@
 {
-  "transfer_source": {
-    "branch": "recovery/sep-09-two-class",
-    "commit": "35a615a130b0a1f3694ed94985c6c5cfccc573c9",
-    "keras_blob": "e07414a3615193d30b54deadee14978006243136"
-  },
-  "total_images": 248,
+  "transfer_base": "models\\esp32\\fibott_classifier.keras",
+  "transfer_base_sha256": "c22df92a8fb879220be3dbe22a08450bece51b6a3870266b5b190d057696865e",
+  "total_images": 569,
   "legacy_images": 123,
   "kiosk_images": 125,
+  "new_kiosk_images": 321,
   "class_counts": {
-    "PET_BOTTLE": 142,
-    "ALUMINUM_CAN": 106
+    "PET_BOTTLE": 386,
+    "ALUMINUM_CAN": 183
   },
   "skipped_exact_duplicates": 1,
   "grouped_kiosk_holdout_groups": [
-    "kiosk/ALUMINUM_CAN/CokezeroSodacan",
+    "kiosk/ALUMINUM_CAN/RoyalSodacan",
     "kiosk/ALUMINUM_CAN/SpriteSodacan",
     "kiosk/PET_BOTTLE/Cokeplastic",
-    "kiosk/PET_BOTTLE/Nestea"
+    "kiosk/PET_BOTTLE/Nestea",
+    "new_kiosk/ALUMINUM_CAN/MountaindewSodaCan",
+    "new_kiosk/PET_BOTTLE/Spriteplastic"
   ],
   "baseline_grouped_holdout": {
-    "accuracy": 0.6875,
+    "accuracy": 0.7927,
     "per_class_recall": {
-      "PET_BOTTLE": 0.4118,
-      "ALUMINUM_CAN": 1.0
+      "PET_BOTTLE": 0.7778,
+      "ALUMINUM_CAN": 0.8214
+    }
+  },
+  "baseline_all_kiosk": {
+    "accuracy": 0.7422,
+    "per_class_recall": {
+      "PET_BOTTLE": 0.7435,
+      "ALUMINUM_CAN": 0.7391
     }
   },
   "classes": [
@@ -40,10 +47,17 @@
   },
   "tflite_size_bytes": 325800,
   "candidate_grouped_holdout": {
-    "accuracy": 0.8125,
+    "accuracy": 0.939,
     "per_class_recall": {
-      "PET_BOTTLE": 0.6471,
-      "ALUMINUM_CAN": 1.0
+      "PET_BOTTLE": 0.9259,
+      "ALUMINUM_CAN": 0.9643
+    }
+  },
+  "candidate_all_kiosk": {
+    "accuracy": 0.926,
+    "per_class_recall": {
+      "PET_BOTTLE": 0.9156,
+      "ALUMINUM_CAN": 0.9493
     }
   }
 }

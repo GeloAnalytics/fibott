@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Firmware Version ──────────────────────────────────────────────────────────
-#define FIRMWARE_VERSION "2.3.0-2class-transfer-v4"
+#define FIRMWARE_VERSION "2.4.0-2class-transfer-v5"
 
 // ── 2-Class Local ML Inference Configuration ────────────────────────────────
 // 2-class MobileNetV1 INT8 model: 0=PET_BOTTLE, 1=ALUMINUM_CAN
@@ -30,8 +30,9 @@
 #define CAPTURE_WIDTH      320
 #define CAPTURE_HEIGHT     240
 
-// ── Flash LED Brightness ──────────────────────────────────────────────────────
-#define FLASH_BRIGHTNESS   0.50f  // Matches the lighting used by the real kiosk capture training set.
+// ── Flash LED Brightness & Settle Timing ──────────────────────────────────────
+#define FLASH_BRIGHTNESS   0.50f  // Matches the lighting used by the real kiosk capture training set (50%).
+#define FLASH_SETTLE_MS    800    // Time (ms) flash stays lit before capture so AEC2/AGC auto-exposure stabilizes (matches dataset capture)
 
 // ── WiFi Configuration ────────────────────────────────────────────────────────
 #define WIFI_SSID     "Fibott"

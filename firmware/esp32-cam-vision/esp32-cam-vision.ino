@@ -420,7 +420,7 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
 static camera_fb_t* captureImage() {
   LOG("CAMERA", "Illuminating chute, settling auto-exposure, and capturing frame...");
   flashOn();
-  delay(60);
+  delay(FLASH_SETTLE_MS);
 
   // The model was fine-tuned on correctly exposed kiosk frames. The OV2640's
   // exposure loop needs one frame under flash before its reading stabilizes;

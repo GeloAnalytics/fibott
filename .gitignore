@@ -46,6 +46,7 @@ next-env.d.ts
 # trained models/bottle-can-head/weights.json output is small and fine to commit.
 /ml-data
 /Dataset/
+/Newdataset/
 /models/esp32/candidates/
 /scripts/ml/__pycache__/
 
