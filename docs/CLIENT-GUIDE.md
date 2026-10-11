@@ -1,6 +1,6 @@
 # Fibott Operator Guide
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-10-11
 
 This is the plain-language guide for operating Fibott. For technical details, see [SYSTEM.md](SYSTEM.md). For QA status, see [STATUS.md](STATUS.md).
 
@@ -20,6 +20,8 @@ This is the plain-language guide for operating Fibott. For technical details, se
 
 ## Before Demo Checklist
 
+> **Current safety limitation:** the deployed two-class vision firmware accepts every successful inference. Do not operate the kiosk unattended or demonstrate paper/hand rejection until the reject path has been implemented and hardware-tested.
+
 1. Confirm the production site opens: `https://fibott.vercel.app`.
 2. Confirm normal email/password login works.
 3. Confirm Google login works from the same browser/device you will use during the demo.
@@ -29,6 +31,7 @@ This is the plain-language guide for operating Fibott. For technical details, se
 7. Confirm the ESP32-CAM is powered on and can reach the production app.
 8. Run one real deposit test and confirm points increase.
 9. Redeem one small voucher and confirm it becomes usable on the HotSpot login page.
+10. Confirm `MIKROTIK_SYNC_KEY` is configured in the deployment and RouterOS before enabling outbound voucher sync.
 
 ---
 

@@ -8,13 +8,11 @@ This firmware turns the **AI-Thinker ESP32-CAM** into a dedicated **Computer Vis
 
 1. **OV2640 Image Capture:** High-speed frame acquisition with auto-exposure and dimmed flash LED illumination (GPIO4).
 2. **On-Device MobileNetV1 TinyML:** Real-time INT8 quantized neural network inference running in PSRAM.
-3. **Multi-Layer Rejection Engine:**
-   - Detects and rejects **Human Hands & Skin Tones** in the chute.
-   - Detects and rejects **Flat White Paper, Tissues, and Cardboard**.
-   - Detects and rejects **Empty/Dark chute scenes**.
-   - Enforces strict minimum confidence (≥ 78%) and separation margin (≥ 50%).
+3. **Current Classification Behavior:** Runs a two-class PET-bottle/aluminum-can model. On a successful inference the current firmware treats the result as accepted and sends `CMD:OPEN`.
 4. **Wireless ESP-NOW Control Protocol:** Transmits commands (`CMD:OPEN`, `CMD:REJECT`, `CMD:READY`, `CMD:BOOT`) wirelessly to the 2nd ESP32 Kiosk Controller over 2.4 GHz ESP-NOW with zero physical wiring.
 5. **WiFi & Cloud Telemetry:** Polls user recycling sessions, background-syncs deposit records with Vercel/Postgres, and streams hardware logs.
+
+> **Safety notice:** confidence/margin and hand/paper/empty-chute settings exist in `config.h`, but the current vision loop does not enforce them. This firmware is for supervised bench testing until a reject path is implemented and validated.
 
 ---
 

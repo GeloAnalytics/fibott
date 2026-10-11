@@ -13,7 +13,7 @@ This document is the official, comprehensive guide for technicians, engineers, a
 5. [Firmware Configuration (`config.h`)](#5-firmware-configuration-configh)
 6. [Flashing Instructions](#6-flashing-instructions)
 7. [Testing & Verification Workflow](#7-testing--verification-workflow)
-8. [Anti-False-Positive Engine (Hand & Paper Rejection)](#8-anti-false-positive-engine-hand--paper-rejection)
+8. [Current Classification Safety Status](#8-current-classification-safety-status)
 9. [Troubleshooting & FAQs](#9-troubleshooting--faqs)
 
 ---
@@ -35,7 +35,7 @@ The Fibott kiosk uses a **Dual-ESP32 Wireless Architecture** to separate high-fr
 │                               │                                   │                               │
 │ • OV2640 Image Acquisition    │                                   │ • SG90/MG90S Servo Gate       │
 │ • MobileNetV1 TinyML in PSRAM │                                   │ • Status LED Indicators       │
-│ • Skin / Paper / Clutter Stop │                                   │ • Dedicated Motor Power       │
+│ • Two-class TinyML inference  │                                   │ • Dedicated Motor Power       │
 │ • WiFi + Cloud Sync (Vercel)  │                                   │ • Sub-10ms Wireless Receiver  │
 │ • Sub-10ms ESP-NOW Broadcast  │                                   │                               │
 └───────────────────────────────┘                                   └───────────────────────────────┘
@@ -122,11 +122,12 @@ Open [`firmware/esp32-cam-vision/config.h`](file:///c:/Users/PC/Fibott/firmware/
 #define BACKEND_PORT   443
 #define DEVICE_API_KEY "fibott_dev_xxxxxxxxxxxxxxxxxxxxxxxxxxxx" // From Admin Panel
 
-// Strict AI Rejection Thresholds
-#define ML_CONFIDENCE_THRESHOLD 0.78f     // 78% certainty minimum
-#define ML_MARGIN_THRESHOLD     0.50f     // 50% separation margin
+// Current values retained for the planned reject path. They are not enforced
+// by the current two-class vision loop.
+#define ML_CONFIDENCE_THRESHOLD 0.50f
+#define ML_MARGIN_THRESHOLD     0.05f
 
-// Anti-False-Positive Filters
+// Planned reject-path switches. They are not currently applied at runtime.
 #define FILTER_ENABLE_HAND_DETECTION  true
 #define FILTER_ENABLE_PAPER_DETECTION true
 #define FILTER_ENABLE_EMPTY_CHUTE     true
@@ -203,22 +204,17 @@ You can test the servo gate on the 2nd ESP32 immediately without the camera!
 ### Step 3: Full End-to-End Deposit Test
 1. Log into the Fibott web app on a smartphone or browser.
 2. Tap **"Start Recycling"** on the User Dashboard.
-3. The kiosk will receive `CMD:READY` wirelessly, beep, and blink the blue LED.
+3. The kiosk controller will receive `CMD:READY` wirelessly and blink the blue LED.
 4. Insert a **plastic bottle** ➔ Camera classifies frame ➔ Wireless packet `CMD:OPEN` sent ➔ Gate opens for 3s ➔ Points awarded.
-5. Insert a **piece of paper** or **hand** ➔ Camera rejects frame ➔ Wireless packet `CMD:REJECT` sent ➔ 3 warning beeps ➔ Gate stays locked.
+5. Do **not** use paper or a hand as an acceptance/rejection test for this release: the current two-class loop does not enforce its reject controls and may open the gate. Test only under supervision until the reject path is implemented.
 
 ---
 
-## 8. Anti-False-Positive Engine (Hand & Paper Rejection)
+## 8. Current Classification Safety Status
 
-The kiosk uses a 4-layer defense system against non-recyclable materials:
+The current ESP32-CAM artifact has two labels only: `PET_BOTTLE` and `ALUMINUM_CAN`. A successful inference always selects one of those labels. The current vision loop then marks it confident and sends `CMD:OPEN`.
 
-| Test Layer | Trigger Condition | Result |
-|:---|:---|:---|
-| **1. Hand / Skin Detector** | Skin tone RGB pixel ratio > 16% of scene | **REJECTED** (`hand_detected`) |
-| **2. Flat Paper Detector** | High uniform brightness (>155) & zero color variance (<7.5) | **REJECTED** (`paper_detected`) |
-| **3. Empty Chute Detector** | Excessively dark scene (brightness < 22) | **REJECTED** (`empty_chute`) |
-| **4. Strict AI Margin** | Model confidence < 78% or class difference < 50% | **REJECTED** (`low_confidence`) |
+`config.h` still contains confidence/margin and hand/paper/empty-chute settings for the planned reject path, but they are not applied by the current code. Do not claim that the kiosk rejects hands, paper, empty chutes, or general trash. Keep testing supervised until a reject class or calibrated out-of-distribution policy has been implemented and validated on the physical kiosk.
 
 ---
 

@@ -1,71 +1,44 @@
 # Fibott System Status and Handoff
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-10-11
+**Release reference:** `origin/main` at `83d2a72` (`Improve two-class kiosk vision model`)
 
 Reference: [SYSTEM.md](SYSTEM.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUIDE.md)
 
----
+## Current status
 
-## Current Status
-
-| Area | Status | Notes |
+| Area | Status | Evidence / limitation |
 |---|---|---|
-| Next.js app | Verified | `npm run lint`, `npx tsc --noEmit`, and `npm run build` pass 100%. |
-| Authentication - credentials | Verified | Login form and Credentials provider normalize email. User status checks enforced. |
-| Authentication - Google OAuth | Verified | Google profile email is normalized and mapped. NextAuth v5 configured with `trustHost: true`. |
-| Admin password reset | Verified | Admin endpoint `POST /api/admin/users/reset-password` updates password hash and logs audit trail. |
-| Database | Verified | Prisma and Neon pooled/unpooled connections working. Points and vouchers use DB transactions. |
-| Recycling session API | Verified | Atomic session claiming (`deviceId` binding) and 1-minute session TTL with cancel button. |
-| ESP32 scan/image intake | Verified | Device routes require `x-device-api-key`, classify deposits, and return fail-safe JSON `servoAction: "REJECT"` on any error. |
-| ESP32 Firmware | Verified | Canonical 2-pin buzzer firmware (`firmware/esp32-cam-buzzer/esp32-cam-buzzer-2pin/`) with `PIN_BUZZER = 14` and `BACKEND_TIMEOUT_MS = 15000`. |
-| Points accumulation | Verified | Accepted deposits award points; spending uses atomic `updateMany` balance checks; failed vouchers refund points. |
-| Voucher redemption | Verified | Redeem flow creates vouchers, spends points, uses direct MikroTik REST if reachable, falls back to RouterOS sync. |
-| MikroTik outbound sync | Verified | `/api/mikrotik/sync` requires `MIKROTIK_SYNC_KEY`, returns pending vouchers, marks issued vouchers confirmed. |
-| MikroTik direct REST | Verified | `npm run test:mikrotik` creates test HotSpot users. RouterOS 7 syntax verified. |
-| Deployment & Env Vars | Verified | Production (`fibott.vercel.app`) and Preview environments fully configured on Vercel with all 14 env vars. |
-| Docs | Updated | README, status, system reference, and operator guide updated to reflect the final verified architecture. |
+| Next.js static checks | Passed | `npm run lint` and `npx tsc --noEmit` pass. A production build produced `.next/BUILD_ID`. |
+| Web/API wiring | Statically reviewed | The kiosk session, device intake, points, voucher, and RouterOS sync routes are present. This is not a live integration test. |
+| Two-class model artifact | Integrated | The current ESP32 artifact is a 96x96 INT8 MobileNetV1 with PET bottle and aluminum can outputs. Its recorded grouped holdout accuracy is 81.25%; PET recall is 64.71%. |
+| Vision reject behavior | Blocked | Successful inferences are always marked confident and open the gate. Confidence/margin thresholds and hand/paper/empty-chute filter settings are not applied by the current vision loop. |
+| ESP-NOW actuator path | Bench test required | Firmware contains the transmitter/receiver protocol, but no hardware flash, channel-match, or servo test was performed for this release. |
+| Deposit/points integrity | Needs remediation | The processor does not enforce that the submitting device owns the claimed session, and completion is not conditional on `ACTIVE`, so retries/concurrency can create duplicate awards. |
+| MikroTik outbound sync | Blocked | The route currently allows requests if `MIKROTIK_SYNC_KEY` is absent. The local environment files do not define it. The key must be set, the tracked RouterOS key rotated, and a router test completed before enablement. |
+| Direct MikroTik REST | Not run | `npm run test:mikrotik` creates a real HotSpot user and was intentionally not run. |
+| Production deployment | Not verified | Repository checks cannot confirm Vercel environment values, Neon connectivity, or a deployed site's behavior. |
+| Documentation | Updated | Architecture, limits, model state, and validation boundaries are documented as of this revision. |
 
----
-
-## Main Flow
+## End-to-end flow
 
 ```text
-Mobile user -> Next.js app -> Neon database
-      |              ^
-      v              |
-ESP32-CAM -> device APIs -> deposit processor -> points ledger
-      |
-      v
-Voucher redeem -> direct MikroTik REST if reachable
-              -> outbound RouterOS polling sync fallback
+User starts 3-minute session
+  -> ESP32-CAM polls and atomically claims an unassigned session
+  -> camera captures a frame and runs two-class TinyML inference
+  -> current firmware sends ESP-NOW CMD:OPEN for every successful inference
+  -> firmware uploads frame + local classification to /api/device/deposit-image
+  -> API records the deposit and awards points
+  -> user redeems points for a voucher
+  -> direct RouterOS REST, or authenticated outbound RouterOS sync, issues HotSpot access
 ```
 
----
+The web-to-database route is connected in code. The physical, database, deployment, and router portions of this flow still require a controlled end-to-end test.
 
-## Final QA Notes
+## Required work before a public demo
 
-- Safe automated checks can verify the web app, TypeScript, build, API route wiring, auth code paths, points logic, voucher logic, and protected sync/device endpoints.
-- Physical checks still need the ESP32-CAM, the MikroTik router, and a phone connected to the Fibott HotSpot.
-- Do not rely on direct REST as the only voucher delivery path. The intended stable path is outbound RouterOS polling sync from `infra/fibott-sync.rsc`.
-
----
-
-## Router Commands to Confirm Before Demo
-
-Run these in RouterOS or WinBox terminal:
-
-```routeros
-/ip hotspot profile print detail
-/ip hotspot print detail
-/ip hotspot user profile print detail where name=1hour
-/system scheduler print detail where name=fibott-sync
-/system script print detail where name=fibott-sync
-```
-
-Confirm:
-
-- The Fibott SSID is open, with no Wi-Fi password.
-- The HotSpot profile allows the expected login method for your login page.
-- User profile `1hour` exists.
-- The `fibott-sync` scheduler is enabled and running every 3 seconds.
-- Walled garden rules allow `fibott.vercel.app` and Google sign-in domains.
+1. Implement and hardware-test a real reject path before gate actuation.
+2. Require a configured `MIKROTIK_SYNC_KEY`, rotate the key currently present in the RouterOS script, and send it in a header rather than a query string.
+3. Make deposit completion device-owned and idempotent, using a conditional session update or a database constraint.
+4. Flash both ESP32s, verify their Wi-Fi channel and ESP-NOW commands, and test accepted and rejected objects with the production backend.
+5. Verify Vercel/Neon environment configuration and redeem a disposable real voucher; clean it up afterwards.

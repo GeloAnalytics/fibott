@@ -1,90 +1,33 @@
-# Fibott - ML Classifier
+# Fibott ML Classifier
 
-Reference for `src/lib/classifier.ts`. This explains why the classifier works
-the way it does. For operator-facing guidance, see
-[CLIENT-GUIDE.md](CLIENT-GUIDE.md). For architecture and command references,
-see [SYSTEM.md](SYSTEM.md).
+**Last updated:** 2026-10-11
 
----
+The normal kiosk path is on-device inference, not the server-side classifier. The ESP32-CAM runs the `models/esp32/fibott_classifier_int8.tflite` artifact and uploads its local material type and confidence with the captured image. `src/app/api/device/deposit-image` records that local result; it uses the server classifier only for older firmware that does not provide local metadata, or optionally for comparison logging.
 
-## Why A Zero-Shot Bootstrap
+## Current model
 
-There is no bottle/can-specific model shipped with this project yet.
-`classifyImage()` falls back to MobileNetV2 pretrained on ImageNet-1k, then maps
-ImageNet labels to Fibott material types through `LABEL_KEYWORDS` in
-`src/lib/classifier.ts`.
+| Property | Value |
+|---|---|
+| Architecture | MobileNetV1, alpha 0.25, 96x96, INT8 |
+| Classes | `PET_BOTTLE`, `ALUMINUM_CAN` |
+| Training images | 248 (142 PET bottle, 106 aluminum can) |
+| Grouped holdout accuracy | 81.25% |
+| PET recall | 64.71% |
+| Aluminum can recall | 100% |
 
-```ts
-const LABEL_KEYWORDS: Record<"PET_BOTTLE" | "ALUMINUM_CAN", string[]> = {
-  PET_BOTTLE: [
-    "water bottle",
-    "pop bottle",
-    "soda bottle",
-    "beer bottle",
-    "wine bottle",
-    "pill bottle",
-  ],
-  ALUMINUM_CAN: ["milk can"],
-};
-```
+The model has no reject/non-recyclable class. A two-class softmax always chooses one of its two known classes, so it cannot alone determine whether an item is a bottle or can.
 
-ImageNet-1k has no dedicated beverage-can class. `"milk can"` is the closest
-available zero-shot proxy. This lets the full capture, classify, accept/reject,
-and award-points pipeline work before real kiosk training data exists, but it is
-not a reliable can detector.
+## Safety status
 
-`MIN_CONFIDENCE = 0.15` is a low trust floor for out-of-distribution images.
-Below that floor, the result is always `REJECTED`.
+The current vision loop marks every successful inference confident and sends `CMD:OPEN`. The threshold, margin, and hand/paper/empty-chute configuration values are not applied in the current implementation. This artifact must not be used as a standalone non-recyclable detector or in an unattended public kiosk.
 
----
+## Server classifier
 
-## Classification Paths
+`src/lib/classifier.ts` remains as a legacy compatibility and comparison path. Its zero-shot ImageNet mapping is not authoritative for current firmware. Do not remove it until all deployed devices send `localMaterialType` and `localConfidence`.
 
-1. Fine-tuned head: if `models/bottle-can-head/weights.json` exists,
-   `classifyImage()` uses it automatically.
-2. Zero-shot fallback: if no fine-tuned head exists, the MobileNet keyword
-   mapping is used.
+## Next model work
 
-The fine-tuned head path is controlled by `FIBOTT_ML_HEAD_PATH`, defaulting to
-`models/bottle-can-head/weights.json`. Deleting or moving that file reverts to
-zero-shot fallback on the next server start.
-
----
-
-## Current Model State
-
-As of the latest known training run, the fine-tuned head had poor validation
-accuracy because it was trained on outdoor TACO litter-detection images rather
-than real kiosk-angle photos. The dataset mismatch is the bottleneck.
-
-The fix is better data, not more app code.
-
-```bash
-# Once real kiosk photos exist, organize them into:
-#   ml-data/PET_BOTTLE/*.jpg
-#   ml-data/ALUMINUM_CAN/*.jpg
-#   ml-data/REJECTED/*.jpg
-npm run ml:train
-```
-
-Useful commands:
-
-- `npm run ml:setup` - create local ML data folders
-- `npm run ml:import` - import a prepared image dataset
-- `npm run ml:import:taco` - import from TACO annotations
-- `npm run ml:train` - train the fine-tuned head
-
-Internet-sourced images can bootstrap the pipeline, but real kiosk-angle photos
-are the highest-value training data.
-
----
-
-## Operator Notes
-
-- A rejected item is not automatically contamination. Check
-  `classificationLabel` in Admin Deposit History before assuming a physical
-  problem.
-- A sudden spike in rejections usually points to camera angle, lighting, or
-  chute positioning.
-- Aluminum cans are weaker than bottles in zero-shot mode because `"milk can"`
-  is only a rough visual proxy.
+1. Collect labeled kiosk-angle images for PET, aluminum, and a broad `REJECTED` class.
+2. Train and validate a three-class or explicit out-of-distribution model with held-out kiosk groups.
+3. Enforce a calibrated confidence/margin policy before `CMD:OPEN`.
+4. Validate accepted and rejected cases on the real ESP32-CAM under kiosk lighting.

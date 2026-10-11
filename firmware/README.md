@@ -25,7 +25,7 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 
 ## 📁 Firmware Folders
 
-| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Vision node: OV2640 camera capture, on-device AI classification (bottles, cans, not bottle/can rejection), anti-false-positive filters, cloud sync, ESP-NOW wireless transmitter. |
+| [`esp32-cam-vision/`](./esp32-cam-vision/) | **AI-Thinker ESP32-CAM** | Vision node: OV2640 camera capture, two-class on-device AI classification (PET bottle or aluminum can), cloud sync, ESP-NOW wireless transmitter. Current firmware does not enforce configured rejection settings. |
 | [`kiosk-controller/`](./kiosk-controller/) | **Standard ESP32 DevKit** | Dedicated servo gate actuator, status LED feedback, ESP-NOW wireless command receiver, USB bench testing. |
 
 ---
@@ -55,25 +55,11 @@ This directory contains the firmware for the **Dual-ESP32 100% Wireless Architec
 
 ---
 
-## 🚫 Anti-False-Positive Filtering (Rejecting Hands, Paper, Trash)
+## ⚠️ Current classification safety status
 
-In earlier versions, a 2-class Softmax model guaranteed that the higher output was always ≥ 50%, causing flat paper, hands, and random objects to be accepted.
+The active artifact is a two-class model: `PET_BOTTLE` or `ALUMINUM_CAN`. It has no non-recyclable output. The firmware currently marks every successful inference as confident and broadcasts `CMD:OPEN`; the configured confidence/margin values and hand, paper, and empty-chute options are not applied by the vision loop.
 
-In **v2.1.0**, four layers of rejection are active:
-
-1. **High Confidence Threshold (`0.78f`) & Margin (`0.50f`)**:
-   - Random objects produce split probabilities (e.g. 55% PET / 45% CAN).
-   - Only items with **≥ 78% certainty** and **≥ 50% separation margin** between classes are accepted.
-2. **Skin Tone / Hand Detector**:
-   - Analyzes normalized RGB ratios (`R > G > B` with red bias).
-   - If skin tone exceeds 16% of the frame, the deposit is instantly rejected with `hand_detected`.
-3. **Flat Paper / Tissue / Cardboard Detector**:
-   - Detects high uniform brightness without specular gloss or curvature.
-   - Instantly rejected with `paper_detected`.
-4. **Empty Chute Detector**:
-   - Detects empty or excessively dark scenes and rejects with `empty_chute`.
-5. **Server-Side Allowlist**:
-   - The cloud classifier strictly validates against verified bottle/can keywords and rejects any non-recyclable item.
+Do not use this firmware in an unattended public kiosk or describe it as rejecting hands, paper, or general trash. Use supervised bench tests only until a calibrated reject path is implemented and verified.
 
 ---
 

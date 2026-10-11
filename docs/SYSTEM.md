@@ -1,7 +1,7 @@
 # Fibott System Reference
 
-**Version:** 2.1
-**Last updated:** 2026-09-03
+**Version:** 2.2
+**Last updated:** 2026-10-11
 
 **Architecture:** Mobile-first reverse vending kiosk with ESP32-CAM and MikroTik HotSpot vouchers
 
@@ -50,7 +50,7 @@ Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The 
 | Device image intake | `src/app/api/device/deposit-image/route.ts` | Accepts ESP32-CAM images and classifies deposits. |
 | Device scan intake | `src/app/api/device/scan/route.ts` | Accepts structured scan payloads from firmware. |
 | Device log intake | `src/app/api/device/logs/route.ts` | Accepts telemetry logs from firmware, stored in `SystemLog`. |
-| Kiosk sessions | `src/app/api/kiosk/session/route.ts` | Starts (POST), polls (GET), and cancels (DELETE) recycling sessions. Session TTL is **1 minute**. |
+| Kiosk sessions | `src/app/api/kiosk/session/route.ts` | Starts (POST), polls (GET), and cancels (DELETE) recycling sessions. Session TTL is **3 minutes**. |
 | Voucher redeem | `src/app/api/vouchers/redeem/route.ts` | Spends points and creates MikroTik vouchers. |
 | MikroTik direct REST | `src/lib/mikrotik-client.ts` | Optional direct RouterOS REST voucher creation. |
 | MikroTik sync | `src/app/api/mikrotik/sync/route.ts` | Router polling endpoint for pending vouchers. |
@@ -65,7 +65,7 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 
 | Firmware Folder | Target Hardware | Primary Role | Description |
 |---|---|---|---|
-| [`firmware/esp32-cam-vision/`](../firmware/esp32-cam-vision/) | AI-Thinker ESP32-CAM | Camera & On-Device AI | OV2640 camera capture, MobileNetV1 TinyML inference in PSRAM, hand/paper reject filters, cloud backend sync, **ESP-NOW 2.4 GHz wireless command transmitter (0 physical wires to 2nd ESP32)**. |
+| [`firmware/esp32-cam-vision/`](../firmware/esp32-cam-vision/) | AI-Thinker ESP32-CAM | Camera & On-Device AI | OV2640 camera capture, two-class MobileNetV1 INT8 inference in PSRAM, cloud record upload, **ESP-NOW 2.4 GHz wireless command transmitter (0 physical wires to 2nd ESP32)**. Rejection controls are configured but not currently enforced; see the safety notice below. |
 | [`firmware/kiosk-controller/`](../firmware/kiosk-controller/) | Standard ESP32 DevKit | Gate Actuator | SG90/MG90S Gate Servo on **GPIO18**, Status LED on **GPIO2**, **ESP-NOW 2.4 GHz wireless command receiver**, USB Serial Monitor bench testing. |
 
 ---
@@ -78,6 +78,10 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 - **Gate Actuator:** SG90 / MG90S Micro Servo driven via ESP32 `ledc` PWM on **GPIO18** of the Actuator Node.
 - **Status LED:** Onboard LED on **GPIO2** for visual state and wireless packet reception feedback.
 - **Power Supply:** 5V 2A+ DC supplies (clean logic power for camera, dedicated power for motor to ensure complete electrical isolation).
+
+## Current safety limitation
+
+The current vision model has only `PET_BOTTLE` and `ALUMINUM_CAN` outputs. After a successful inference, the firmware marks the result confident and sends `CMD:OPEN`; it does not apply the configured confidence/margin thresholds or hand, paper, and empty-chute filters. Therefore it is not safe for unattended public use or for claims that non-recyclables are rejected. Use controlled bench tests only until a reject path is implemented and verified on hardware.
 
 ---
 
@@ -97,7 +101,7 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 | `MIKROTIK_PROTOCOL` | `https` in production unless the router is configured otherwise. |
 | `MIKROTIK_PORT` | Router REST port. |
 | `MIKROTIK_INSECURE_TLS` | `true` if the router uses a self-signed certificate. |
-| `MIKROTIK_SYNC_KEY` | Shared secret for RouterOS polling sync. |
+| `MIKROTIK_SYNC_KEY` | Required shared secret for RouterOS polling sync. Set it in the deployment and RouterOS configuration; do not commit or place it in a URL. |
 | `ALLOW_MOCK_VOUCHER` | Optional development flag for mock voucher behavior. |
 
 ---
@@ -116,9 +120,9 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 1. A user starts a kiosk session from the web app.
 2. The ESP32-CAM polls for an active session.
 3. The ESP32 posts a scan or image with `x-device-api-key`.
-4. The deposit processor validates the material and active session.
+4. The deposit processor validates the reported material and active session.
 5. Accepted deposits call `awardPoints` and complete the session.
-6. Rejected deposits are recorded with a rejection reason and do not award points.
+6. A client can submit a rejected result, which is recorded without points. The current production vision loop does not produce normal rejection results after successful inference; see the safety limitation above.
 
 ---
 
@@ -131,7 +135,7 @@ Fibott uses a **Dual-ESP32 100% Wireless Architecture** (Vision Node + Actuator 
 5. If direct REST has a network/router reachability issue, the voucher remains `PENDING` for outbound sync.
 6. The MikroTik router polls `/api/mikrotik/sync`, creates the HotSpot user, then confirms issuance.
 
-The stable production path is outbound RouterOS polling sync. Do not remove it while debugging direct REST.
+The intended delivery path is outbound RouterOS polling sync. Enable it only with `MIKROTIK_SYNC_KEY` set and after a real router test. Do not remove it while debugging direct REST.
 
 ---
 
@@ -169,3 +173,5 @@ npm run build
 ```
 
 Use `npm run test:mikrotik` only when you are ready to create and then clean up a real test HotSpot user.
+
+These commands do not test physical camera classification, ESP-NOW delivery, the deployed Vercel environment, Neon data writes, or MikroTik issuance. Those require a controlled end-to-end hardware test.

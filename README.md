@@ -6,13 +6,15 @@ Fibott is a mobile-first reverse vending kiosk platform. A user opens the app, s
 
 ## Status
 
-- **Web app**: Next.js App Router app deployed at `https://fibott.vercel.app`.
+- **Release reference**: `origin/main` currently points to `83d2a72` (`Improve two-class kiosk vision model`).
+- **Web app**: lint and TypeScript checks pass; the production build produces a Next.js build artifact.
 - **Authentication**: NextAuth with Credentials and Google OAuth. Emails are normalized before credential login, registration, password reset, and Google profile mapping.
 - **Database**: Prisma ORM with Neon Serverless PostgreSQL.
-- **Device intake**: ESP32-CAM posts authenticated scans/images to the device APIs.
+- **Device intake**: ESP32-CAM posts authenticated scans/images to the device APIs. The current vision firmware submits its local two-class result with every image.
 - **Points**: Earn, spend, and refund flows use database transactions and atomic balance updates.
 - **Vouchers**: Redeeming points creates a voucher, attempts direct MikroTik REST when available, and falls back to outbound RouterOS polling sync.
-- **MikroTik sync**: RouterOS polls `GET /api/mikrotik/sync` using `MIKROTIK_SYNC_KEY`, creates HotSpot users, then confirms issued vouchers.
+- **MikroTik sync**: RouterOS polls `GET /api/mikrotik/sync` using `MIKROTIK_SYNC_KEY`, creates HotSpot users, then confirms issued vouchers. Set this key in every deployment before enabling sync.
+- **Release safety**: the current two-class firmware accepts every successful inference; its configured confidence, margin, and hand/paper/empty-chute settings are not enforced at runtime. Do not run an unattended public kiosk until rejection logic is implemented and hardware-tested.
 - **Operator docs**: See [docs/STATUS.md](docs/STATUS.md), [docs/SYSTEM.md](docs/SYSTEM.md), and [docs/CLIENT-GUIDE.md](docs/CLIENT-GUIDE.md).
 
 ---
