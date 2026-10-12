@@ -1,7 +1,7 @@
 # Fibott System Reference
 
-**Version:** 2.2
-**Last updated:** 2026-10-11
+**Version:** 2.3
+**Last updated:** 2026-10-12
 
 **Architecture:** Mobile-first reverse vending kiosk with ESP32-CAM and MikroTik HotSpot vouchers
 
@@ -54,8 +54,13 @@ Fibott awards Wi-Fi voucher time for deposited recyclable bottles and cans. The 
 | Voucher redeem | `src/app/api/vouchers/redeem/route.ts` | Spends points and creates MikroTik vouchers. |
 | MikroTik direct REST | `src/lib/mikrotik-client.ts` | Optional direct RouterOS REST voucher creation. |
 | MikroTik sync | `src/app/api/mikrotik/sync/route.ts` | Router polling endpoint for pending vouchers. |
+| Admin reports API | `src/app/api/admin/report/route.ts` | Aggregates summary, activity chart, top users, recent deposits, and transaction history filtered by `day`, `week`, or `month`. Excludes rejected deposits. |
+| Admin reports client | `src/app/(admin)/admin/reports/reports-client.tsx` | Interactive reports dashboard with timeframe tabs (Today/Week/Month), KPI summary badges, activity distribution, and independent per-section PDF exports. |
+| Leaderboard rewards manager | `src/components/admin/admin-leaderboard-rewards-manager.tsx` | Configures monthly Top 3 points distribution and triggers award distribution with interactive dialog modal verification and re-award safeguards. |
+| Admin grant points dialog | `src/components/admin/admin-grant-points-dialog.tsx` | Interactive modal on `/admin/users` to grant bonus points directly to accounts with audit logging. |
 | Admin logs | `src/app/api/admin/logs/route.ts` | Paginated system log feed with level/source/tag filters. |
 | Admin device alerts | `src/app/api/admin/device-alerts/route.ts` | Device health summary (GET) and admin-initiated manual alerts (POST). |
+| Database export script | `scripts/export-database-to-excel.ts` | Exports all relational tables, dummy records, transactions, deposits, and system logs to `fibott_database_export.xlsx`. |
 
 ---
 

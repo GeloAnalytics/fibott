@@ -1,15 +1,18 @@
 # Fibott System Status and Handoff
 
-**Last updated:** 2026-10-11
-**Release reference:** `origin/main` at `83d2a72` (`Improve two-class kiosk vision model`)
+**Last updated:** 2026-10-12
+**Release reference:** `origin/main` at `83d2a72` (`Improve two-class kiosk vision model` + `Admin Reports & Leaderboard Rewards Overhaul`)
 
-Reference: [SYSTEM.md](SYSTEM.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUIDE.md)
+Reference: [SYSTEM.md](SYSTEM.md) | Full Documentation: [FULL_SYSTEM_DOCUMENTATION.md](FULL_SYSTEM_DOCUMENTATION.md) | Operator guide: [CLIENT-GUIDE.md](CLIENT-GUIDE.md)
 
 ## Current status
 
 | Area | Status | Evidence / limitation |
 |---|---|---|
-| Next.js static checks | Passed | `npm run lint` and `npx tsc --noEmit` pass. A production build produced `.next/BUILD_ID`. |
+| Next.js static checks | Passed | `npx tsc --noEmit` and `npm run lint` compile cleanly without type or syntax errors. |
+| Admin Reports Page | Overhauled | "Rejected" counts removed; timeframe filtering (Day, Week, Month) enabled; Transaction History section added; independent per-section PDF export buttons implemented. |
+| Leaderboard Rewards UI | Implemented | Replaced native browser prompts with base-ui Dialog popups with distribution preview, re-award alerts, and force confirmation. |
+| Database Excel Export | Complete | Multi-sheet Excel workbook `fibott_database_export.xlsx` generated with 1,023 users (including dummy seed data), 2,000 deposits, 388 transactions, vouchers, and logs. |
 | Web/API wiring | Statically reviewed | The kiosk session, device intake, points, voucher, and RouterOS sync routes are present. This is not a live integration test. |
 | Two-class model artifact | Integrated | The current ESP32 artifact is a 96x96 INT8 MobileNetV1 with PET bottle and aluminum can outputs. Its recorded grouped holdout accuracy is 81.25%; PET recall is 64.71%. |
 | Vision reject behavior | Blocked | Successful inferences are always marked confident and open the gate. Confidence/margin thresholds and hand/paper/empty-chute filter settings are not applied by the current vision loop. |
