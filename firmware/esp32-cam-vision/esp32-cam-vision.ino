@@ -1,24 +1,25 @@
-/*
- * Fibott — ESP32-CAM Vision & AI Inference Firmware
+﻿/*
+ * Fibott â€” ESP32-CAM Vision & AI Inference Firmware
  * 
- * ── Dual-ESP32 Wireless Architecture (Vision & Cloud Node) ───────────────────
+ * â”€â”€ Dual-ESP32 Wireless Architecture (Vision & Cloud Node) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * Board:    AI Thinker ESP32-CAM  (Arduino IDE → Tools → Board)
- * PSRAM:    Tools → PSRAM → "OPI PSRAM"  (REQUIRED — camera will not init without it)
+ * Camera:   OV3660  (replace the default OV2640 module on the AI-Thinker board)
+ * PSRAM:    Tools â†’ PSRAM â†’ "OPI PSRAM"  (REQUIRED â€” camera will not init without it)
  * Flash:    micro-USB via onboard CH340C (or FTDI: GPIO0 to GND during upload)
  *
  * Libraries required:
- *   - ArduinoJson  ≥ 7.0  (by Benoit Blanchon)
+ *   - ArduinoJson  â‰¥ 7.0  (by Benoit Blanchon)
  *   - "Chirale_TensorFlowLite" (Library Manager)
  *
- * ── Wireless Interconnect (ZERO Physical Wiring to 2nd ESP32) ────────────────
+ * â”€â”€ Wireless Interconnect (ZERO Physical Wiring to 2nd ESP32) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *   Communication with the Kiosk Controller is 100% wireless over 2.4 GHz ESP-NOW.
  *   - No UART TX/RX wires
  *   - No common ground wire needed (electrically isolated power domains)
- *   - ESP32-CAM GPIO33  →  Onboard red status LED (active-LOW)
- *   - ESP32-CAM GPIO4   →  Onboard Flash LED (dimmed PWM for chute illumination)
+ *   - ESP32-CAM GPIO33  â†’  Onboard red status LED (active-LOW)
+ *   - ESP32-CAM GPIO4   â†’  Onboard Flash LED (dimmed PWM for chute illumination)
  *
- * ── Rejection Capabilities ───────────────────────────────────────────────────
+ * â”€â”€ Rejection Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *   - Strict MobileNet INT8 Confidence Threshold (>= 78% & margin >= 50%)
  *   - Real-time Human Hand / Skin Tone rejection filter
  *   - Flat Paper / Cardboard / Tissue rejection filter
@@ -35,13 +36,13 @@
 #include <ArduinoJson.h>
 #include <esp_now.h>
 
-// ── TensorFlow Lite Micro ───────────────────────────────────────────────────
+// â”€â”€ TensorFlow Lite Micro â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #include <Chirale_TensorFlowLite.h>
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
-// ── Wireless Command Packet Struct ───────────────────────────────────────────
+// â”€â”€ Wireless Command Packet Struct â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 typedef struct __attribute__((packed)) {
   char magic[4];        // "FIBO"
   uint8_t version;      // 1
@@ -67,11 +68,11 @@ struct LocalClassificationResult {
   unsigned long elapsedMs;
 };
 
-// ── Serial diagnostic macros ──────────────────────────────────────────────────
+// â”€â”€ Serial diagnostic macros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #define LOG(tag, msg)       Serial.printf("[%-8s] %s\n", tag, msg)
 #define LOGF(tag, fmt, ...) Serial.printf("[%-8s] " fmt "\n", tag, ##__VA_ARGS__)
 
-// ── OV2640 Camera Pin Map (AI-Thinker ESP32-CAM) ─────────────────────────────
+// â”€â”€ OV3660 Camera Pin Map (AI-Thinker ESP32-CAM) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #define CAM_PWDN   32
 #define CAM_RESET  -1
 #define CAM_XCLK    0
@@ -89,7 +90,7 @@ struct LocalClassificationResult {
 #define CAM_HREF   23
 #define CAM_PCLK   22
 
-// ── Kiosk FSM States ──────────────────────────────────────────────────────────
+// â”€â”€ Kiosk FSM States â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 enum KioskState {
   STATE_IDLE,
   STATE_READY,
@@ -102,11 +103,11 @@ static char activeSessionId[128] = "";
 static unsigned long lastHeartbeatMs = 0;
 static unsigned long lastWifiWarnMs  = 0;
 
-// ── Status LED (GPIO33, Active-LOW) ──────────────────────────────────────────
+// â”€â”€ Status LED (GPIO33, Active-LOW) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void ledOn()  { digitalWrite(PIN_LED_STATUS, LOW);  }
 static void ledOff() { digitalWrite(PIN_LED_STATUS, HIGH); }
 
-// ── Flash LED Dimming Control (GPIO4, LEDC Timer 3 / Channel 3) ──────────────
+// â”€â”€ Flash LED Dimming Control (GPIO4, LEDC Timer 3 / Channel 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #define FLASH_PWM_RESOLUTION_BITS 10
 #define FLASH_PWM_MAX_DUTY        ((1 << FLASH_PWM_RESOLUTION_BITS) - 1)
 
@@ -142,7 +143,7 @@ static void flashOff() {
   ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
 }
 
-// ── Wireless Setup (ESP-NOW 2.4 GHz) ──────────────────────────────────────────
+// â”€â”€ Wireless Setup (ESP-NOW 2.4 GHz) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void wirelessSetup() {
   LOG("WIRELESS", "Initialising ESP-NOW wireless transmitter (0 physical wires)...");
 
@@ -164,11 +165,11 @@ static void wirelessSetup() {
   }
 }
 
-// ── Send Command to 2nd ESP32 Controller via ESP-NOW ──────────────────────────
+// â”€â”€ Send Command to 2nd ESP32 Controller via ESP-NOW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void sendControllerCmd(const char* cmd) {
   if (!cmd || strlen(cmd) == 0) return;
 
-  LOGF("WIRELESS→ACTUATOR", "%s", cmd);
+  LOGF("WIRELESSâ†’ACTUATOR", "%s", cmd);
 
   if (espNowReady) {
     WirelessCommandPacket pkt = {};
@@ -186,9 +187,9 @@ static void sendControllerCmd(const char* cmd) {
   }
 }
 
-// ── Camera Initialization ─────────────────────────────────────────────────────
+// â”€â”€ Camera Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static bool cameraInit() {
-  LOG("CAMERA", "Initialising OV2640 with PSRAM...");
+  LOG("CAMERA", "Initialising OV3660 with PSRAM...");
 
   camera_config_t cfg = {};
   cfg.ledc_channel = LEDC_CHANNEL_2;
@@ -209,7 +210,7 @@ static bool cameraInit() {
   cfg.pin_sccb_scl = CAM_SIOC;
   cfg.pin_pwdn     = CAM_PWDN;
   cfg.pin_reset    = CAM_RESET;
-  cfg.xclk_freq_hz = 20000000;
+  cfg.xclk_freq_hz = 20000000;  // OV3660 supports up to 24 MHz; 20 MHz is stable
   cfg.pixel_format = PIXFORMAT_JPEG;
   cfg.frame_size   = CAPTURE_FRAMESIZE;
   cfg.jpeg_quality = 12;
@@ -223,20 +224,23 @@ static bool cameraInit() {
     return false;
   }
 
+  // OV3660-specific sensor tuning
+  // set_gainceiling / set_aec2 / set_ae_level are OV2640-only; OV3660 uses
+  // its own AEC/AGC pipeline â€” configure image orientation and white-balance instead.
   sensor_t *s = esp_camera_sensor_get();
   if (s) {
-    s->set_brightness(s, 1);
-    s->set_saturation(s, -1);
-    s->set_gainceiling(s, GAINCEILING_16X);
-    s->set_aec2(s, 1);
-    s->set_ae_level(s, 1);
+    s->set_vflip(s, 1);       // OV3660 image is vertically flipped relative to OV2640 mounting
+    s->set_hmirror(s, 0);     // No horizontal mirror needed
+    s->set_whitebal(s, 1);    // Enable auto white balance
+    s->set_awb_gain(s, 1);    // Enable AWB gain
+    s->set_aec_value(s, 300); // Initial AEC target (0-1200); AEC loop corrects after warm-up frame
   }
 
-  LOGF("CAMERA", "OV2640 ready (%dx%d QVGA)", CAPTURE_WIDTH, CAPTURE_HEIGHT);
+  LOGF("CAMERA", "OV3660 ready (%dx%d QVGA)", CAPTURE_WIDTH, CAPTURE_HEIGHT);
   return true;
 }
 
-// ── Telemetry: Send Log to Backend ────────────────────────────────────────────
+// â”€â”€ Telemetry: Send Log to Backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void sendLog(const char* level, const char* tag, const char* message, const char* details = nullptr) {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -269,7 +273,7 @@ static void sendLog(const char* level, const char* tag, const char* message, con
   client.stop();
 }
 
-// ── Telemetry: Send Real-Time Vision & Sensor Reading to Backend ─────────────
+// â”€â”€ Telemetry: Send Real-Time Vision & Sensor Reading to Backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void sendReadingTelemetry(const LocalClassificationResult &res, const char* sessionId) {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -330,7 +334,7 @@ static void sendReadingTelemetry(const LocalClassificationResult &res, const cha
   client.stop();
 }
 
-// ── Fast Reject Notification to App ──────────────────────────────────────────
+// â”€â”€ Fast Reject Notification to App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void sendRejectResult(const char *sessionId, const char *reasonLabel, float confidence) {
   if (WiFi.status() != WL_CONNECTED || !sessionId || strlen(sessionId) == 0) return;
 
@@ -366,7 +370,7 @@ static void sendRejectResult(const char *sessionId, const char *reasonLabel, flo
   client.stop();
 }
 
-// ── Session Polling ───────────────────────────────────────────────────────────
+// â”€â”€ Session Polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static bool pollSession(char *outSessionId, size_t maxLen) {
   if (WiFi.status() != WL_CONNECTED) return false;
 
@@ -416,13 +420,13 @@ static bool pollSession(char *outSessionId, size_t maxLen) {
   return true;
 }
 
-// ── Frame Capture ─────────────────────────────────────────────────────────────
+// â”€â”€ Frame Capture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static camera_fb_t* captureImage() {
   LOG("CAMERA", "Illuminating chute, settling auto-exposure, and capturing frame...");
   flashOn();
   delay(FLASH_SETTLE_MS);
 
-  // The model was fine-tuned on correctly exposed kiosk frames. The OV2640's
+  // The model was fine-tuned on correctly exposed kiosk frames. The OV3660's
   // exposure loop needs one frame under flash before its reading stabilizes;
   // discard that warm-up frame and classify only the next frame.
   camera_fb_t *warm = esp_camera_fb_get();
@@ -442,7 +446,7 @@ static camera_fb_t* captureImage() {
   return fb;
 }
 
-// ── Image Upload & Cloud Record ───────────────────────────────────────────────
+// â”€â”€ Image Upload & Cloud Record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static String uploadImage(camera_fb_t *fb, const char *sessionId,
                            const char *localMaterialType, float localConfidence) {
   if (WiFi.status() != WL_CONNECTED) return "";
@@ -530,7 +534,7 @@ static String uploadImage(camera_fb_t *fb, const char *sessionId,
   return "";
 }
 
-// ── ESP32 Local ML Engine & Strict Heuristics ─────────────────────────────────
+// â”€â”€ ESP32 Local ML Engine & Strict Heuristics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static uint8_t *tensorArenaBuffer = nullptr;
 static uint8_t *rgbDecodeBuffer   = nullptr;
 static bool tfliteInitialized     = false;
@@ -687,7 +691,7 @@ static LocalClassificationResult classifyLocallyML(camera_fb_t *fb) {
   return res;
 }
 
-// ── WiFi Watchdog ─────────────────────────────────────────────────────────────
+// â”€â”€ WiFi Watchdog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
 
@@ -714,7 +718,7 @@ static void maybeHeartbeat() {
   sendLog("INFO", "HEARTBEAT", "Vision node online", details);
 }
 
-// ── Setup ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -723,6 +727,7 @@ void setup() {
   Serial.println("====================================================");
   Serial.println("  Fibott ESP32-CAM  [2-Class Vision + AI]          ");
   Serial.printf( "  Firmware: %s\n", FIRMWARE_VERSION);
+  Serial.println("  Camera:   OV3660                                  ");
   Serial.println("  Model:    2-class MobileNetV1 INT8 (96x96)       ");
   Serial.println("  Classes:  0=PET_BOTTLE | 1=ALUMINUM_CAN          ");
   Serial.println("  Link:     ESP-NOW 2.4GHz -> Kiosk Controller     ");
@@ -734,9 +739,9 @@ void setup() {
 
   flashSetup();
 
-  LOG("BOOT", "Starting OV2640 camera...");
+  LOG("BOOT", "Starting OV3660 camera...");
   if (!cameraInit()) {
-    LOG("BOOT", "FATAL: Camera init failed — entering blink halt loop");
+    LOG("BOOT", "FATAL: Camera init failed â€” entering blink halt loop");
     while (true) {
       ledOn();  delay(100);
       ledOff(); delay(100);
@@ -765,10 +770,10 @@ void setup() {
   // Notify 2nd ESP32 that Vision Node has booted (wirelessly!)
   sendControllerCmd("CMD:BOOT");
 
-  LOG("BOOT", "Boot sequence complete — State: IDLE");
+  LOG("BOOT", "Boot sequence complete â€” State: IDLE");
 }
 
-// ── Main Loop ─────────────────────────────────────────────────────────────────
+// â”€â”€ Main Loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 void loop() {
   ensureWifi();
 
@@ -784,22 +789,22 @@ void loop() {
       }
 
       strncpy(activeSessionId, sessionId, sizeof(activeSessionId));
-      LOGF("FSM", "IDLE → READY (session=%s)", activeSessionId);
+      LOGF("FSM", "IDLE â†’ READY (session=%s)", activeSessionId);
       state = STATE_READY;
       break;
     }
 
     case STATE_READY: {
-      LOG("FSM", "READY — Notifying 2nd ESP32 to prompt user");
+      LOG("FSM", "READY â€” Notifying 2nd ESP32 to prompt user");
       sendControllerCmd("CMD:READY"); // 2nd ESP32 beeps & blinks LED
 
-      sendLog("INFO", "SESSION", "Deposit session started — awaiting item insertion", activeSessionId);
+      sendLog("INFO", "SESSION", "Deposit session started â€” awaiting item insertion", activeSessionId);
 
       // Settle delay: Give user 2.5s window to place bottle/can into the chute
       LOGF("FSM", "Waiting %ums for user to insert item...", INSERTION_SETTLE_MS);
       delay(INSERTION_SETTLE_MS);
 
-      LOG("FSM", "READY → PROCESSING (analyzing chute)");
+      LOG("FSM", "READY â†’ PROCESSING (analyzing chute)");
       ledOn();
       state = STATE_PROCESSING;
       break;
@@ -808,7 +813,7 @@ void loop() {
     case STATE_PROCESSING: {
       camera_fb_t *fb = captureImage();
       if (!fb) {
-        LOG("FSM", "Frame capture failed — retrying in 1s");
+        LOG("FSM", "Frame capture failed â€” retrying in 1s");
         ledOff();
         sendControllerCmd("CMD:ERROR");
         delay(1000);
@@ -818,7 +823,7 @@ void loop() {
       // Run Local TinyML (2-class MobileNet INT8: PET_BOTTLE vs ALUMINUM_CAN)
       LocalClassificationResult mlRes = classifyLocallyML(fb);
 
-      // ── Stream vision and sensor reading to Admin Logs ────────────────────
+      // â”€â”€ Stream vision and sensor reading to Admin Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       sendReadingTelemetry(mlRes, activeSessionId);
 
       LOGF("FSM", "ACCEPTED: %s (conf=%.2f) -- Opening servo gate!", mlRes.materialType, mlRes.confidence);
