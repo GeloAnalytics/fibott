@@ -5,7 +5,14 @@ import { VoucherRuleCreateForm } from "./voucher-rule-create-form";
 
 export default async function AdminRewardsPage() {
   const [rewardRules, voucherRules] = await Promise.all([
-    prisma.rewardRule.findMany({ orderBy: { materialType: "asc" } }),
+    prisma.rewardRule.findMany({
+      where: {
+        materialType: {
+          not: "REJECTED",
+        },
+      },
+      orderBy: { materialType: "asc" },
+    }),
     prisma.voucherRule.findMany({ orderBy: { pointsCost: "asc" } }),
   ]);
 
@@ -21,14 +28,16 @@ export default async function AdminRewardsPage() {
 
       <div className="space-y-4">
         <h2 className="text-lg font-medium">Points per material</h2>
-        {rewardRules.map((rule) => (
-          <RewardRuleForm
-            key={rule.id}
-            id={rule.id}
-            materialType={rule.materialType}
-            pointsPerItem={rule.pointsPerItem}
-          />
-        ))}
+        {rewardRules
+          .filter((rule) => rule.materialType !== "REJECTED")
+          .map((rule) => (
+            <RewardRuleForm
+              key={rule.id}
+              id={rule.id}
+              materialType={rule.materialType}
+              pointsPerItem={rule.pointsPerItem}
+            />
+          ))}
       </div>
 
       <div className="space-y-4">

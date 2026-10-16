@@ -33,6 +33,11 @@ export function RewardRuleForm({
     defaultValues: { pointsPerItem },
   });
 
+  // Hide rejected options since it's a work in progress
+  if (materialType === "REJECTED") {
+    return null;
+  }
+
   async function onSubmit(values: FormValues) {
     setSubmitting(true);
     const res = await fetch("/api/admin/rewards", {
