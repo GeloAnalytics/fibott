@@ -10,7 +10,12 @@ export default async function ProfilePage() {
   return (
     <div className="max-w-lg space-y-6">
       <h1 className="text-2xl font-semibold">Profile</h1>
-      <ProfileForm name={user.name ?? ""} email={user.email ?? ""} />
+      <ProfileForm
+        name={user.name ?? ""}
+        email={user.email ?? ""}
+        phone={user.phone ?? ""}
+        address={user.address ?? ""}
+      />
       {user.passwordHash && <PasswordForm />}
     </div>
   );

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZackVerify — Sign in</title>
+  <style>
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;padding:24px;display:grid;place-items:center;color:#211b31;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 0%,#ede6ff 0,#f6f4fb 43%,#f5f6fa 100%)}button,input{font:inherit}.card{width:min(432px,100%);padding:30px;background:#fff;border:1px solid #eeeaf5;border-radius:24px;box-shadow:0 24px 70px #35255716}.top{display:flex;align-items:center;gap:10px}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;color:white;background:#7450d8;font-size:18px;font-weight:800;box-shadow:0 5px 12px #7450d839}.brand{color:#4e4167;font-size:13px;font-weight:800;letter-spacing:.11em}.secure{margin-left:auto;display:flex;align-items:center;gap:6px;color:#887c9b;font-size:12px}.secure:before{content:"";width:7px;height:7px;border-radius:50%;background:#36b886}h1{margin:27px 0 6px;font-size:28px;letter-spacing:-.04em}.sub{margin:0 0 23px;color:#776e85;font-size:14px;line-height:1.6}.field{display:block;margin:0 0 15px}.field span{display:block;margin:0 0 7px;color:#51475f;font-size:13px;font-weight:650}.field input{width:100%;height:46px;padding:0 13px;border:1px solid #e4dfeb;border-radius:11px;outline:none;color:#282035;background:#fff}.field input:focus{border-color:#8d70dd;box-shadow:0 0 0 3px #7450d81c}.field input::placeholder{color:#aaa2b4}.verify-row{display:flex;align-items:center;gap:11px;margin:5px 0 17px;padding:12px 13px;border:1px solid #e9e5ee;border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s}.verify-row:hover{border-color:#c9bbed;background:#fcfbff}.verify-row input{width:19px;height:19px;margin:0;accent-color:#704bd0;cursor:pointer}.verify-copy strong{display:block;color:#392f48;font-size:13px;font-weight:650}.verify-copy small{display:block;margin-top:3px;color:#988fa2;font-size:11px}.login{width:100%;height:47px;border:0;border-radius:12px;color:#fff;background:#704bd0;box-shadow:0 6px 14px #704bd02a;font-size:14px;font-weight:750;cursor:pointer;transition:background .15s,transform .15s}.login:hover{transform:translateY(-1px);background:#603ac3}.login:disabled{opacity:.65;cursor:wait;transform:none}.hint{margin:17px 0 0;padding:11px 12px;border-radius:11px;color:#786e86;background:#faf9fc;font-size:11px;line-height:1.65}.hint strong{color:#4e4167}.status{min-height:22px;margin:12px 0 0;color:#786e86;font-size:13px;text-align:center}.status.success{color:#18865e}.footer{display:flex;justify-content:center;align-items:center;gap:7px;margin-top:19px;color:#a39bad;font-size:11px}.footer span{color:#c0b7ca}
+    .scrim{position:fixed;inset:0;z-index:5;display:none;place-items:center;padding:18px;background:#211b3180;backdrop-filter:blur(5px)}.scrim.open{display:grid}.modal{position:relative;width:min(400px,100%);padding:23px;background:#fff;border:1px solid #eeeaf5;border-radius:20px;box-shadow:0 24px 70px #17112040;animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}.close{position:absolute;top:13px;right:14px;width:32px;height:32px;border:0;border-radius:9px;color:#81768f;background:#f3f0f6;font-size:20px;cursor:pointer}.modal-brand{color:#7450d8;font-size:11px;font-weight:800;letter-spacing:.12em}.modal h2{margin:11px 40px 5px 0;font-size:21px;letter-spacing:-.03em}.modal-sub{margin:0 0 17px;color:#81778d;font-size:13px;line-height:1.5}.challenge{padding:13px;border:1px solid #ece8f3;border-radius:15px;background:#faf9fc}.prompt{display:flex;align-items:center;gap:10px;margin-bottom:12px}.prompt-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;color:#704bd0;background:#eee8ff;font-size:19px}.prompt strong{display:block;font-size:13px}.prompt small{display:block;margin-top:3px;color:#92899e;font-size:11px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tile{position:relative;aspect-ratio:1;overflow:hidden;padding:0;border:2px solid transparent;border-radius:11px;background:#eeeaf2;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}.tile:hover{transform:translateY(-2px);box-shadow:0 5px 12px #34264c1a}.tile:focus-visible{outline:3px solid #b9a4f5;outline-offset:2px}.tile img{display:block;width:100%;height:100%;object-fit:cover}.tile img.flag-image{object-fit:contain;background:#fff}.tile.selected{border-color:#7652d9;box-shadow:0 0 0 2px #7652d926}.tile.selected:after{content:"✓";position:absolute;top:6px;right:6px;width:22px;height:22px;display:grid;place-items:center;border-radius:50%;color:white;background:#7450d8;font-size:14px;font-weight:800}.modal-actions{display:flex;gap:9px;margin-top:13px}.modal-button{height:43px;border:0;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer}.modal-button.primary{flex:1;color:#fff;background:#704bd0}.modal-button.primary:hover{background:#603ac3}.modal-button.secondary{width:44px;color:#6e647c;background:#f0edf5;font-size:18px}.modal-status{min-height:20px;margin:9px 0 0;color:#786e86;font-size:12px;text-align:center}.id-input{width:100%;height:47px;margin:2px 0 12px;padding:0 13px;border:1px solid #e4dfeb;border-radius:11px;outline:none;font-size:16px;letter-spacing:.07em}.id-input:focus{border-color:#8d70dd;box-shadow:0 0 0 3px #7450d81c}.id-error{min-height:20px;margin:-5px 0 8px;color:#bf3d56;font-size:12px}.loading-box{padding:30px 8px;text-align:center}.spinner{width:40px;height:40px;margin:5px auto 15px;border:4px solid #eae4f6;border-top-color:#7450d8;border-radius:50%;animation:spin .75s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.loading-text{color:#675d76;font-size:13px}.welcome{display:none;margin-top:16px;padding:15px;border:1px solid #ccebdc;border-radius:13px;color:#186747;background:#f2fbf6;text-align:center}.welcome.show{display:block}.welcome strong{display:block;margin-bottom:4px;font-size:16px}.welcome small{color:#4e836d;font-size:12px}.hidden{display:none!important}
+    @media(max-width:420px){.card{padding:24px 20px;border-radius:21px}.modal{padding:20px}.grid{gap:7px}}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="top"><div class="mark">Z</div><div class="brand">ZACKVERIFY</div><div class="secure">Secure sign in</div></div>
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to your account to continue.</p>
+    <form id="loginForm">
+      <label class="field"><span>Username</span><input id="username" name="username" autocomplete="username" placeholder="Enter your username" required></label>
+      <label class="field"><span>Password</span><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required></label>
+      <label class="verify-row" for="humanCheck"><input id="humanCheck" type="checkbox"><span class="verify-copy"><strong>I’m not a robot</strong><small>Complete a quick check to continue</small></span></label>
+      <button id="loginButton" class="login" type="submit">Sign in</button>
+    </form>
+    <div class="hint"><strong>Demo accounts</strong><br>User: <strong>Zack</strong> &nbsp; Password: <strong>1234566789</strong><br>Admin: <strong>admin</strong> &nbsp; Password: <strong>admin123</strong></div>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <div class="welcome" id="welcome"><strong id="welcomeTitle">You’re signed in!</strong><small id="welcomeText">Welcome back.</small></div>
+    <div class="footer">◈ <span>Protected by</span> ZackVerify</div>
+  </main>
+
+  <div class="scrim" id="scrim" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <section class="modal">
+      <button class="close" id="closeModal" type="button" aria-label="Close">×</button>
+      <div class="modal-brand">ZACKVERIFY CHECK</div>
+      <h2 id="modalTitle">Quick verification</h2>
+      <p class="modal-sub" id="modalSub">Complete this quick check to continue.</p>
+      <div class="loading-box hidden" id="loadingView"><div class="spinner"></div><div class="loading-text">Preparing your check…</div></div>
+      <div id="pictureView" class="hidden">
+        <div class="challenge">
+          <div class="prompt"><div class="prompt-icon" aria-hidden="true">▧</div><div><strong id="instruction">Select the picture</strong><small>Tap the picture that matches</small></div></div>
+          <div class="grid" id="grid"></div>
+        </div>
+        <div class="modal-actions"><button id="verifyPictures" class="modal-button primary" type="button">Verify</button><button id="refreshPictures" class="modal-button secondary" type="button" aria-label="New pictures" title="New pictures">↻</button></div>
+        <p id="pictureStatus" class="modal-status" role="status" aria-live="polite">Select the matching picture.</p>
+      </div>
+      <div id="idView" class="hidden">
+        <input class="id-input" id="adminId" inputmode="numeric" autocomplete="off" placeholder="Enter your ID number" aria-label="ID number">
+        <p class="id-error" id="idStatus" role="status" aria-live="polite"></p>
+        <button id="verifyId" class="modal-button primary" type="button" style="width:100%">Verify ID</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const form = document.querySelector("#loginForm");
+    const username = document.querySelector("#username");
+    const password = document.querySelector("#password");
+    const humanCheck = document.querySelector("#humanCheck");
+    const loginButton = document.querySelector("#loginButton");
+    const status = document.querySelector("#status");
+    const welcome = document.querySelector("#welcome");
+    const welcomeTitle = document.querySelector("#welcomeTitle");
+    const welcomeText = document.querySelector("#welcomeText");
+    const scrim = document.querySelector("#scrim");
+    const closeModal = document.querySelector("#closeModal");
+    const modalTitle = document.querySelector("#modalTitle");
+    const modalSub = document.querySelector("#modalSub");
+    const loadingView = document.querySelector("#loadingView");
+    const pictureView = document.querySelector("#pictureView");
+    const idView = document.querySelector("#idView");
+    const instruction = document.querySelector("#instruction");
+    const grid = document.querySelector("#grid");
+    const pictureStatus = document.querySelector("#pictureStatus");
+    const adminId = document.querySelector("#adminId");
+    const idStatus = document.querySelector("#idStatus");
+    const dicePictures = [
+      { src: "Dice/Dice%20more.jpg", alt: "Red, green, and blue dice" },
+      { src: "Dice/Dice.jfif", alt: "Dice in different colors" },
+      { src: "Dice/purple%20dice.jfif", alt: "Two purple dice", key: "purple" },
+      { src: "Dice/random%20sort%20of%20dice.jpg", alt: "A tray of colorful dice" }
+    ];
+    const colors = [
+      { key: "blue", name: "blue", src: "Color/blue.jpg" },
+      { key: "green", name: "green", src: "Color/Green.png" },
+      { key: "orange", name: "orange", src: "Color/orange.png" },
+      { key: "red", name: "red", src: "Color/red.jfif" }
+    ];
+    const dogPictures = [
+      { src: "Dog/black%20dog.jpg", alt: "Black dog 1", black: true },
+      { src: "Dog/black%20dog.webp", alt: "Black dog 2", black: true },
+      { src: "Dog/black%20dog2.jpg", alt: "Black dog 3", black: true },
+      { src: "Dog/white-dogs-westie.avif", alt: "White dog", black: false }
+    ];
+    const flags = [
+      { name: "the Philippines", src: "Flag/Flag_of_the_Philippines.svg.webp" },
+      { name: "China", src: "Flag/Flag_of_the_People%27s_Republic_of_China.svg.webp" },
+      { name: "the United States", src: "Flag/Flag_of_the_United_States_%28DDD-F-416E_specifications%29.svg.webp" },
+      { name: "South Korea", src: "Flag/Flag-South-Korea.webp" }
+    ];
+    const picturePool = [
+      ...colors.map(color => ({ ...color, kind: "color", alt: color.name + " color" })),
+      ...dogPictures.map(dog => ({ ...dog, kind: "dog" })),
+      ...dicePictures.map(dice => ({ ...dice, kind: "dice" })),
+      ...flags.map(flag => ({ ...flag, kind: "flag", alt: "Flag of " + flag.name, flag: true }))
+    ];
+    let verified = false;
+    let isAdminChallenge = false;
+    let selectedIndices = new Set();
+    let targetIndices = new Set();
+
+    function showModal(view) {
+      loadingView.classList.toggle("hidden", view !== "loading");
+      pictureView.classList.toggle("hidden", view !== "pictures");
+      idView.classList.toggle("hidden", view !== "id");
+      scrim.classList.add("open");
+    }
+
+    function hideModal() {
+      scrim.classList.remove("open");
+      if (!verified) humanCheck.checked = false;
+    }
+
+    function pickRandom(items, count) {
+      const pool = [...items];
+      for (let index = pool.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+      }
+      return pool.slice(0, count);
+    }
+
+    function shuffle(items) {
+      const result = [...items];
+      for (let index = result.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+      }
+      return result;
+    }
+
+    function makeChallenge() {
+      const tasks = [
+        { prompt: "Select the purple dice", matches: picture => picture.kind === "dice" && picture.key === "purple" },
+        { prompt: "Select all the black dogs", matches: picture => picture.kind === "dog" && picture.black },
+        ...[
+          ["green"], ["blue"], ["red"], ["orange"],
+          ["green", "blue"], ["red", "orange"], ["blue", "orange"]
+        ].map(names => ({
+          prompt: "Select " + (names.length === 2 ? names[0] + " and " + names[1] : names[0]),
+          matches: picture => picture.kind === "color" && names.includes(picture.name)
+        })),
+        ...flags.map(flag => ({
+          prompt: "Select the flag of " + flag.name,
+          matches: picture => picture.kind === "flag" && picture.name === flag.name
+        }))
+      ];
+      const task = tasks[Math.floor(Math.random() * tasks.length)];
+      const targets = picturePool.filter(task.matches);
+      const distractors = pickRandom(picturePool.filter(picture => !task.matches(picture)), 4 - targets.length);
+      return {
+        prompt: task.prompt,
+        pictures: [...targets, ...distractors].map(picture => ({
+          ...picture,
+          target: task.matches(picture)
+        }))
+      };
+    }
+
+    function loadPictures() {
+      selectedIndices = new Set();
+      const challenge = makeChallenge();
+      const tiles = shuffle(challenge.pictures);
+      targetIndices = new Set(tiles.map((picture, index) => picture.target ? index : null).filter(index => index !== null));
+      instruction.textContent = challenge.prompt;
+      modalSub.textContent = targetIndices.size > 1 ? "Select all the pictures that match." : "Select the picture that matches.";
+      pictureStatus.textContent = targetIndices.size > 1 ? "Select all matching pictures." : "Select the matching picture.";
+      grid.replaceChildren();
+      tiles.forEach((picture, index) => {
+        const tile = document.createElement("button");
+        tile.type = "button";
+        tile.className = "tile";
+        tile.setAttribute("aria-label", "Picture " + (index + 1) + ": " + picture.alt);
+        tile.setAttribute("aria-pressed", "false");
+        const image = document.createElement("img");
+        image.src = picture.src;
+        image.alt = "";
+        image.draggable = false;
+        if (picture.flag) image.classList.add("flag-image");
+        tile.append(image);
+        tile.addEventListener("click", () => {
+          if (selectedIndices.has(index)) selectedIndices.delete(index);
+          else selectedIndices.add(index);
+          tile.classList.toggle("selected", selectedIndices.has(index));
+          tile.setAttribute("aria-pressed", String(selectedIndices.has(index)));
+          pictureStatus.textContent = selectedIndices.size > 1 ? "Pictures selected. Ready to verify." : "Picture selected. Ready to verify.";
+        });
+        grid.append(tile);
+      });
+    }
+
+    function finishVerification() {
+      verified = true;
+      humanCheck.checked = true;
+      humanCheck.disabled = true;
+      hideModal();
+      status.textContent = "Check complete. You can sign in now.";
+      status.className = "status success";
+    }
+
+    humanCheck.addEventListener("change", () => {
+      if (!humanCheck.checked || verified) return;
+      humanCheck.checked = false;
+      isAdminChallenge = username.value.trim().toLowerCase() === "admin" && password.value === "admin123";
+      showModal("loading");
+      modalTitle.textContent = isAdminChallenge ? "Admin ID check" : "Quick verification";
+      modalSub.textContent = isAdminChallenge ? "Enter the admin ID number to continue." : "Choose the correct picture to continue.";
+      window.setTimeout(() => {
+        if (!scrim.classList.contains("open")) return;
+        if (isAdminChallenge) {
+          adminId.value = "";
+          idStatus.textContent = "";
+          showModal("id");
+          adminId.focus();
+        } else {
+          showModal("pictures");
+          loadPictures();
+        }
+      }, 650);
+    });
+
+    document.querySelector("#verifyPictures").addEventListener("click", () => {
+      if (selectedIndices.size === 0) {
+        pictureStatus.textContent = "Select the matching picture or pictures first.";
+      } else if (selectedIndices.size === targetIndices.size && [...targetIndices].every(index => selectedIndices.has(index))) {
+        finishVerification();
+      } else {
+        pictureStatus.textContent = "That selection doesn’t match. Try again.";
+      }
+    });
+
+    document.querySelector("#refreshPictures").addEventListener("click", loadPictures);
+
+    function checkAdminId() {
+      if (adminId.value.trim() === "0423-3885") {
+        finishVerification();
+      } else {
+        idStatus.textContent = "That ID doesn’t match. Try again.";
+        adminId.focus();
+      }
+    }
+
+    document.querySelector("#verifyId").addEventListener("click", checkAdminId);
+    adminId.addEventListener("keydown", event => {
+      if (event.key === "Enter") checkAdminId();
+    });
+    closeModal.addEventListener("click", hideModal);
+    scrim.addEventListener("click", event => { if (event.target === scrim) hideModal(); });
+    document.addEventListener("keydown", event => { if (event.key === "Escape" && scrim.classList.contains("open")) hideModal(); });
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      if (!verified) {
+        status.textContent = "Complete the check before signing in.";
+        status.className = "status";
+        return;
+      }
+      const user = username.value.trim();
+      const pass = password.value;
+      if (user.toLowerCase() === "zack" && pass === "1234566789") {
+        welcomeTitle.textContent = "You’re signed in, Zack!";
+        welcomeText.textContent = "Welcome back to your account.";
+      } else if (user.toLowerCase() === "admin" && pass === "admin123" && isAdminChallenge) {
+        welcomeTitle.textContent = "Admin access granted!";
+        welcomeText.textContent = "Admin ID verified.";
+      } else {
+        status.textContent = "Username or password is incorrect.";
+        status.className = "status";
+        return;
+      }
+      status.textContent = "";
+      welcome.classList.add("show");
+      loginButton.textContent = "Signed in ✓";
+      loginButton.disabled = true;
+    });
+  </script>
+</body>
+</html>

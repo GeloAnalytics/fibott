@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GoogleIcon } from "@/components/shared/google-icon";
+import { HumanVerify } from "@/components/shared/human-verify";
 
 type FormValues = { email: string; password: string };
 
@@ -30,6 +31,9 @@ export function LoginForm() {
       : null
   );
   const [submitting, setSubmitting] = useState(false);
+  const [humanVerified, setHumanVerified] = useState(false);
+  const [humanError, setHumanError] = useState(false);
+
   const verified = searchParams.get("verified") === "1";
   const passwordReset = searchParams.get("reset") === "1";
 
@@ -40,6 +44,11 @@ export function LoginForm() {
   } = useForm<FormValues>();
 
   async function onSubmit(values: FormValues) {
+    if (!humanVerified) {
+      setHumanError(true);
+      return;
+    }
+    setHumanError(false);
     setServerError(null);
     setSubmitting(true);
     await signIn("credentials", {
@@ -106,6 +115,17 @@ export function LoginForm() {
               <p className="text-sm text-destructive">Password is required</p>
             )}
           </div>
+
+          {/* Human verification */}
+          <div className="space-y-1">
+            <HumanVerify onVerified={() => { setHumanVerified(true); setHumanError(false); }} />
+            {humanError && (
+              <p className="text-sm text-destructive" role="alert">
+                Please complete the human verification before signing in.
+              </p>
+            )}
+          </div>
+
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             {submitting ? "Signing in" : "Sign in"}
